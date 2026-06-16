@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+*.log
+.vite
+
+# Claude Code local settings (per-user permissions, etc.)
+.claude/settings.local.json

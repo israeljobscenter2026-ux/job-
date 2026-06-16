@@ -1,0 +1,106 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: 'Heebo', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+
+/* Hide default number-input spinners */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] { -moz-appearance: textfield; }
+
+::selection {
+  background: rgba(99, 102, 241, 0.18);
+}
+
+/* Custom scrollbar */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 2px solid #f8fafc; }
+  ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+}
+
+@layer components {
+  .btn {
+    @apply relative inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-4 disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98] sm:py-2;
+  }
+  .btn-primary {
+    @apply btn text-white bg-brand-600 hover:bg-brand-700 shadow-glow focus-visible:ring-brand-300/60;
+  }
+  .btn-primary-grad {
+    @apply btn text-white bg-grad-brand hover:brightness-110 shadow-glow focus-visible:ring-brand-300/60;
+  }
+  .btn-secondary {
+    @apply btn bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 shadow-sm focus-visible:ring-slate-200;
+  }
+  .btn-danger {
+    @apply btn text-white bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-200;
+  }
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 focus-visible:ring-slate-200;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-base placeholder:text-slate-400 transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-200/60 sm:py-2 sm:text-sm;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-semibold text-slate-700;
+  }
+
+  .card {
+    @apply rounded-2xl bg-white shadow-card border border-slate-200/70;
+  }
+  .card-hover {
+    @apply card transition hover:shadow-lift hover:-translate-y-0.5;
+  }
+
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+  }
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900;
+  }
+  .nav-link-active {
+    @apply text-brand-700 bg-brand-50 hover:bg-brand-50 hover:text-brand-700 shadow-sm;
+  }
+
+  .stat-card {
+    @apply card p-5 relative overflow-hidden;
+  }
+
+  .grad-text {
+    @apply bg-grad-brand bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .ltr-cell {
+    direction: ltr;
+    unicode-bidi: isolate;
+    display: inline-block;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
