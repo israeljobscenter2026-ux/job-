@@ -98,11 +98,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-5 text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-xl p-3 leading-relaxed">
-            <div className="font-semibold text-slate-700 mb-1">סיסמה ראשונית:</div>
-            <code className="font-mono text-slate-800">Admin123!</code>
-            <div className="mt-1.5">משתמשים מורשים: <span className="font-mono">salameemel@gmail.com</span>, <span className="font-mono">djelidor4@gmail.com</span></div>
-          </div>
         </div>
 
         <div className="text-center mt-4">
