@@ -3,8 +3,6 @@ import { useData } from '../contexts/DataContext.jsx';
 import {
   isValidIsraeliMobile,
   normalizePhone,
-  isValidIsraeliId,
-  normalizeId,
   isNonEmpty
 } from '../lib/validation.js';
 import { JOB_TYPE_LABELS, JOB_TYPE_LIST, JOB_TYPES } from '../lib/statuses.js';
@@ -48,7 +46,6 @@ export default function LandingPage() {
     firstName: '',
     lastName: '',
     phone: '',
-    idNumber: '',
     area: '',
     jobType: '',
     consent: false
@@ -65,7 +62,6 @@ export default function LandingPage() {
     if (!isNonEmpty(form.firstName)) e.firstName = 'יש להזין שם פרטי';
     if (!isNonEmpty(form.lastName)) e.lastName = 'יש להזין שם משפחה';
     if (!isValidIsraeliMobile(form.phone)) e.phone = 'מספר נייד ישראלי תקין (05XXXXXXXX)';
-    if (!isValidIsraeliId(form.idNumber)) e.idNumber = 'תעודת זהות אינה תקינה';
     if (!isNonEmpty(form.area)) e.area = 'יש לבחור אזור / אתר';
     if (!form.jobType) e.jobType = 'יש לבחור סוג משרה';
     if (!form.consent) e.consent = 'יש לאשר את ההסכמה כדי להמשיך';
@@ -81,8 +77,7 @@ export default function LandingPage() {
     try {
       createLead({
         ...form,
-        phone: normalizePhone(form.phone),
-        idNumber: normalizeId(form.idNumber)
+        phone: normalizePhone(form.phone)
       });
       setSubmitted(true);
     } finally {
@@ -154,7 +149,7 @@ export default function LandingPage() {
               <div className="relative card p-5 sm:p-7 md:p-8 backdrop-blur-sm bg-white/95">
                 {submitted ? (
                   <SuccessMessage onAgain={() => {
-                    setForm({ firstName: '', lastName: '', phone: '', idNumber: '', area: '', jobType: '', consent: false });
+                    setForm({ firstName: '', lastName: '', phone: '', area: '', jobType: '', consent: false });
                     setSubmitted(false);
                   }} />
                 ) : (
@@ -195,16 +190,6 @@ export default function LandingPage() {
                           onChange={(e) => update('phone', e.target.value)}
                           autoComplete="tel"
                           maxLength={15}
-                          required
-                        />
-                      </Field>
-                      <Field label="תעודת זהות" error={errors.idNumber} required>
-                        <input
-                          className="input"
-                          inputMode="numeric"
-                          value={form.idNumber}
-                          onChange={(e) => update('idNumber', e.target.value)}
-                          maxLength={9}
                           required
                         />
                       </Field>

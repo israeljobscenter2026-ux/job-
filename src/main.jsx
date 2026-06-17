@@ -7,16 +7,20 @@ import { DataProvider } from './contexts/DataContext.jsx';
 import { seedIfNeeded } from './lib/storage.js';
 import './index.css';
 
-await seedIfNeeded();
+async function bootstrap() {
+  await seedIfNeeded();
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <DataProvider>
-          <App />
-        </DataProvider>
-      </AuthProvider>
-    </BrowserRouter>
-  </React.StrictMode>
-);
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <BrowserRouter>
+        <AuthProvider>
+          <DataProvider>
+            <App />
+          </DataProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </React.StrictMode>
+  );
+}
+
+bootstrap();
