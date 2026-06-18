@@ -75,11 +75,13 @@ export default function LandingPage() {
     if (Object.keys(e).length) return;
     setSubmitting(true);
     try {
-      createLead({
+      await createLead({
         ...form,
         phone: normalizePhone(form.phone)
       });
       setSubmitted(true);
+    } catch {
+      setErrors({ submit: 'לא ניתן לשלוח כרגע. נסו שוב בעוד רגע.' });
     } finally {
       setSubmitting(false);
     }
@@ -265,6 +267,11 @@ export default function LandingPage() {
                     </label>
                     {errors.consent && (
                       <p className="mt-1 text-xs text-rose-600">{errors.consent}</p>
+                    )}
+                    {errors.submit && (
+                      <p className="mt-3 rounded-xl bg-rose-50 border border-rose-200 p-3 text-sm text-rose-700">
+                        {errors.submit}
+                      </p>
                     )}
 
                     <button type="submit" className="btn-primary-grad w-full mt-4 !py-3 text-base" disabled={submitting}>

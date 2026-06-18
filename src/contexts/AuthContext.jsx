@@ -1,54 +1,98 @@
-import { createContext, useContext, useMemo, useState } from 'react';
-import { getSession, setSession, getUsers, setUsers } from '../lib/storage.js';
-import { sha256 } from '../lib/hash.js';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { isSupabaseConfigured, supabase } from '../lib/supabase.js';
 
 const AuthContext = createContext(null);
 
-function initialUser() {
-  const s = getSession();
-  if (!s) return null;
-  const u = getUsers().find((x) => x.id === s.userId);
-  return u ? { id: u.id, email: u.email, name: u.name } : null;
+function toAppUser(authUser) {
+  if (!authUser) return null;
+  return {
+    id: authUser.id,
+    email: authUser.email,
+    name: authUser.user_metadata?.name || authUser.email
+  };
+}
+
+function authError(message) {
+  return { ok: false, error: message };
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(initialUser);
-  const ready = true;
+  const [user, setUser] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+
+    if (!isSupabaseConfigured) {
+      setReady(true);
+      return undefined;
+    }
+
+    supabase.auth.getSession().then(({ data }) => {
+      if (!mounted) return;
+      setUser(toAppUser(data.session?.user));
+      setReady(true);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(toAppUser(session?.user));
+      setReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, []);
 
   async function login(email, password) {
+    if (!isSupabaseConfigured) {
+      return authError('Supabase לא מוגדר. יש להגדיר VITE_SUPABASE_URL ו-VITE_SUPABASE_ANON_KEY.');
+    }
+
     const normalizedEmail = String(email || '').trim().toLowerCase();
-    const u = getUsers().find((x) => x.email.toLowerCase() === normalizedEmail);
-    if (!u) return { ok: false, error: 'אימייל או סיסמה אינם נכונים' };
-    const hash = await sha256(password);
-    if (hash !== u.passwordHash) return { ok: false, error: 'אימייל או סיסמה אינם נכונים' };
-    setSession({ userId: u.id, loginAt: new Date().toISOString() });
-    setUser({ id: u.id, email: u.email, name: u.name });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password
+    });
+
+    if (error) return authError('אימייל או סיסמה אינם נכונים');
+    setUser(toAppUser(data.user));
     return { ok: true };
   }
 
-  function logout() {
-    setSession(null);
+  async function logout() {
+    if (isSupabaseConfigured) await supabase.auth.signOut();
     setUser(null);
   }
 
   async function changePassword(currentPassword, newPassword) {
-    if (!user) return { ok: false, error: 'לא מחובר' };
+    if (!isSupabaseConfigured) {
+      return authError('Supabase לא מוגדר.');
+    }
+    if (!user) return authError('לא מחובר');
     if (!newPassword || newPassword.length < 6) {
-      return { ok: false, error: 'הסיסמה החדשה חייבת להכיל לפחות 6 תווים' };
+      return authError('הסיסמה החדשה חייבת להכיל לפחות 6 תווים');
     }
-    const users = getUsers();
-    const u = users.find((x) => x.id === user.id);
-    if (!u) return { ok: false, error: 'משתמש לא נמצא' };
-    const currentHash = await sha256(currentPassword);
-    if (currentHash !== u.passwordHash) {
-      return { ok: false, error: 'הסיסמה הנוכחית אינה נכונה' };
-    }
-    u.passwordHash = await sha256(newPassword);
-    setUsers(users);
+
+    const verify = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword
+    });
+
+    if (verify.error) return authError('הסיסמה הנוכחית אינה נכונה');
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) return authError('לא ניתן לעדכן את הסיסמה כרגע');
+
     return { ok: true };
   }
 
-  const value = useMemo(() => ({ user, ready, login, logout, changePassword }), [user, ready]);
+  const value = useMemo(
+    () => ({ user, ready, login, logout, changePassword }),
+    [user, ready]
+  );
+
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -1,182 +1,288 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import {
-  getLeads, setLeads,
-  getAreas, setAreas,
-  getTemplates, setTemplates,
-  getAds, setAds,
-  uuid
-} from '../lib/storage.js';
 import { STATUSES } from '../lib/statuses.js';
 import { DEFAULT_TEMPLATES } from '../lib/whatsapp.js';
 import { sanitizeText } from '../lib/validation.js';
+import { isSupabaseConfigured, supabase } from '../lib/supabase.js';
+import { useAuth } from './AuthContext.jsx';
 
 const DataContext = createContext(null);
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
 
+function leadFromRow(row) {
+  return {
+    id: row.id,
+    firstName: row.first_name || '',
+    lastName: row.last_name || '',
+    phone: row.phone || '',
+    idNumber: row.id_number || '',
+    area: row.area || '',
+    jobType: row.job_type || '',
+    status: row.status || STATUSES.NEW,
+    notes: row.notes || '',
+    hireDate: row.hire_date,
+    statusHistory: row.status_history || [],
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function leadToRow(payload) {
+  return {
+    first_name: sanitizeText(payload.firstName).trim(),
+    last_name: sanitizeText(payload.lastName).trim(),
+    phone: String(payload.phone || '').replace(/\D/g, ''),
+    id_number: String(payload.idNumber || '').replace(/\D/g, ''),
+    area: sanitizeText(payload.area).trim(),
+    job_type: payload.jobType
+  };
+}
+
+function leadPatchToRow(patch) {
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.firstName !== undefined) row.first_name = sanitizeText(patch.firstName).trim();
+  if (patch.lastName !== undefined) row.last_name = sanitizeText(patch.lastName).trim();
+  if (patch.phone !== undefined) row.phone = String(patch.phone || '').replace(/\D/g, '');
+  if (patch.idNumber !== undefined) row.id_number = String(patch.idNumber || '').replace(/\D/g, '');
+  if (patch.area !== undefined) row.area = sanitizeText(patch.area).trim();
+  if (patch.jobType !== undefined) row.job_type = patch.jobType;
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.notes !== undefined) row.notes = sanitizeText(patch.notes);
+  if (patch.hireDate !== undefined) row.hire_date = patch.hireDate;
+  if (patch.statusHistory !== undefined) row.status_history = patch.statusHistory;
+  return row;
+}
+
+function areaFromRow(row) {
+  return { id: row.id, name: row.name };
+}
+
+function adFromRow(row) {
+  return {
+    id: row.id,
+    title: row.title || '',
+    body: row.body || '',
+    image: row.image || '',
+    notes: row.notes || '',
+    status: row.status || 'draft',
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function adToRow(payload) {
+  return {
+    title: sanitizeText(payload.title).trim(),
+    body: sanitizeText(payload.body || ''),
+    image: payload.image || '',
+    notes: sanitizeText(payload.notes || '')
+  };
+}
+
+function adPatchToRow(patch) {
+  const row = { updated_at: new Date().toISOString() };
+  if (patch.title !== undefined) row.title = sanitizeText(patch.title).trim();
+  if (patch.body !== undefined) row.body = sanitizeText(patch.body);
+  if (patch.image !== undefined) row.image = patch.image || '';
+  if (patch.notes !== undefined) row.notes = sanitizeText(patch.notes);
+  if (patch.status !== undefined) row.status = patch.status;
+  if (patch.publishedAt !== undefined) row.published_at = patch.publishedAt;
+  return row;
+}
+
+function templatesFromRows(rows) {
+  const next = { ...DEFAULT_TEMPLATES };
+  for (const row of rows || []) {
+    next[row.key] = { title: row.title, body: row.body };
+  }
+  return next;
+}
+
 export function DataProvider({ children }) {
-  const [leads, setLeadsState] = useState(() => getLeads());
-  const [areas, setAreasState] = useState(() => getAreas());
-  const [templates, setTemplatesState] = useState(() => getTemplates() || DEFAULT_TEMPLATES);
-  const [ads, setAdsState] = useState(() => getAds());
+  const { user, ready: authReady } = useAuth();
+  const [leads, setLeadsState] = useState([]);
+  const [areas, setAreasState] = useState([]);
+  const [templates, setTemplatesState] = useState(DEFAULT_TEMPLATES);
+  const [ads, setAdsState] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const refreshData = useCallback(async () => {
+    if (!authReady) return;
+    setLoading(true);
+    setError(null);
+
+    if (!isSupabaseConfigured) {
+      setError('Supabase לא מוגדר.');
+      setLoading(false);
+      return;
+    }
+
+    const areasQuery = supabase.from('areas').select('*').order('name');
+    const { data: areaRows, error: areasError } = await areasQuery;
+    if (areasError) setError(areasError.message);
+    setAreasState((areaRows || []).map(areaFromRow));
+
+    if (!user) {
+      setLeadsState([]);
+      setTemplatesState(DEFAULT_TEMPLATES);
+      setAdsState([]);
+      setLoading(false);
+      return;
+    }
+
+    const [leadsResult, templatesResult, adsResult] = await Promise.all([
+      supabase.from('leads').select('*').order('created_at', { ascending: false }),
+      supabase.from('templates').select('*'),
+      supabase.from('ads').select('*').order('created_at', { ascending: false })
+    ]);
+
+    if (leadsResult.error || templatesResult.error || adsResult.error) {
+      setError(leadsResult.error?.message || templatesResult.error?.message || adsResult.error?.message);
+    }
+
+    setLeadsState((leadsResult.data || []).map(leadFromRow));
+    setTemplatesState(templatesFromRows(templatesResult.data || []));
+    setAdsState((adsResult.data || []).map(adFromRow));
+    setLoading(false);
+  }, [authReady, user]);
 
   useEffect(() => {
-    if (!getTemplates()) setTemplates(DEFAULT_TEMPLATES);
-  }, []);
+    refreshData();
+  }, [refreshData]);
 
-  function persistLeads(next) {
-    setLeads(next);
-    setLeadsState(next);
-  }
-  function persistAreas(next) {
-    setAreas(next);
-    setAreasState(next);
-  }
-  function persistTemplates(next) {
-    setTemplates(next);
-    setTemplatesState(next);
-  }
-  function persistAds(next) {
-    setAds(next);
-    setAdsState(next);
-  }
-
-  // --- Leads CRUD -----------------------------------------------------------
-  const createLead = useCallback((payload) => {
+  const createLead = useCallback(async (payload) => {
     const now = new Date().toISOString();
-    const lead = {
-      id: uuid(),
-      firstName: sanitizeText(payload.firstName).trim(),
-      lastName: sanitizeText(payload.lastName).trim(),
-      phone: String(payload.phone || '').replace(/\D/g, ''),
-      idNumber: String(payload.idNumber || '').replace(/\D/g, ''),
-      area: sanitizeText(payload.area).trim(),
-      jobType: payload.jobType,
+    const row = {
+      ...leadToRow(payload),
       status: STATUSES.NEW,
       notes: '',
-      hireDate: null,
-      createdAt: now,
-      updatedAt: now,
-      statusHistory: [{ status: STATUSES.NEW, at: now, by: 'מערכת' }]
+      status_history: [{ status: STATUSES.NEW, at: now, by: 'מערכת' }]
     };
-    const next = [lead, ...getLeads()];
-    persistLeads(next);
-    return lead;
+
+    const { error: insertError } = await supabase.from('leads').insert(row);
+    if (insertError) throw insertError;
+    if (user) await refreshData();
+    return null;
+  }, [refreshData, user]);
+
+  const updateLead = useCallback(async (id, patch, actor = 'מנהל') => {
+    const current = leads.find((l) => l.id === id);
+    if (!current) return;
+
+    const normalized = { ...patch };
+    if (patch.status && patch.status !== current.status) {
+      normalized.statusHistory = [
+        ...(current.statusHistory || []),
+        { status: patch.status, at: new Date().toISOString(), by: actor }
+      ];
+    }
+
+    const { data, error: updateError } = await supabase
+      .from('leads')
+      .update(leadPatchToRow(normalized))
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    setLeadsState((list) => list.map((lead) => (lead.id === id ? leadFromRow(data) : lead)));
+  }, [leads]);
+
+  const deleteLead = useCallback(async (id) => {
+    const { error: deleteError } = await supabase.from('leads').delete().eq('id', id);
+    if (deleteError) throw deleteError;
+    setLeadsState((list) => list.filter((lead) => lead.id !== id));
   }, []);
 
-  const updateLead = useCallback((id, patch, actor = 'מנהל') => {
-    const current = getLeads();
-    const next = current.map((l) => {
-      if (l.id !== id) return l;
-      const updated = { ...l, ...patch, updatedAt: new Date().toISOString() };
-      if (patch.notes !== undefined) updated.notes = sanitizeText(patch.notes);
-      if (patch.firstName !== undefined) updated.firstName = sanitizeText(patch.firstName).trim();
-      if (patch.lastName !== undefined) updated.lastName = sanitizeText(patch.lastName).trim();
-      if (patch.area !== undefined) updated.area = sanitizeText(patch.area).trim();
-      if (patch.phone !== undefined) updated.phone = String(patch.phone).replace(/\D/g, '');
-      if (patch.idNumber !== undefined) updated.idNumber = String(patch.idNumber).replace(/\D/g, '');
-
-      if (patch.status && patch.status !== l.status) {
-        updated.statusHistory = [
-          ...(l.statusHistory || []),
-          { status: patch.status, at: new Date().toISOString(), by: actor }
-        ];
-        if (patch.status !== STATUSES.HIRED && !patch.hireDate) {
-          // Keep hireDate if it existed (so we can see history); only clear if explicitly asked.
-        }
-      }
-      return updated;
-    });
-    persistLeads(next);
-  }, []);
-
-  const deleteLead = useCallback((id) => {
-    persistLeads(getLeads().filter((l) => l.id !== id));
-  }, []);
-
-  // --- Areas CRUD -----------------------------------------------------------
-  const addArea = useCallback((name) => {
+  const addArea = useCallback(async (name) => {
     const clean = sanitizeText(name).trim();
     if (!clean) return;
-    const current = getAreas();
-    if (current.some((a) => a.name === clean)) return;
-    persistAreas([...current, { id: uuid(), name: clean }]);
+    const { data, error: insertError } = await supabase
+      .from('areas')
+      .insert({ name: clean })
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    setAreasState((list) => [...list, areaFromRow(data)].sort((a, b) => a.name.localeCompare(b.name, 'he')));
   }, []);
 
-  const updateArea = useCallback((id, name) => {
+  const updateArea = useCallback(async (id, name) => {
     const clean = sanitizeText(name).trim();
     if (!clean) return;
-    persistAreas(getAreas().map((a) => (a.id === id ? { ...a, name: clean } : a)));
+    const { data, error: updateError } = await supabase
+      .from('areas')
+      .update({ name: clean })
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+    setAreasState((list) => list.map((area) => (area.id === id ? areaFromRow(data) : area)));
   }, []);
 
-  const deleteArea = useCallback((id) => {
-    persistAreas(getAreas().filter((a) => a.id !== id));
+  const deleteArea = useCallback(async (id) => {
+    const { error: deleteError } = await supabase.from('areas').delete().eq('id', id);
+    if (deleteError) throw deleteError;
+    setAreasState((list) => list.filter((area) => area.id !== id));
   }, []);
 
-  // --- Ads CRUD -------------------------------------------------------------
-  const createAd = useCallback((payload) => {
-    const now = new Date().toISOString();
-    const ad = {
-      id: uuid(),
-      title: sanitizeText(payload.title).trim(),
-      body: sanitizeText(payload.body),
-      image: payload.image || '',
-      notes: sanitizeText(payload.notes || ''),
-      status: 'draft',
-      publishedAt: null,
-      createdAt: now,
-      updatedAt: now
-    };
-    persistAds([ad, ...getAds()]);
-    return ad;
+  const createAd = useCallback(async (payload) => {
+    const { data, error: insertError } = await supabase
+      .from('ads')
+      .insert(adToRow(payload))
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    setAdsState((list) => [adFromRow(data), ...list]);
   }, []);
 
-  const updateAd = useCallback((id, patch) => {
-    const next = getAds().map((a) => {
-      if (a.id !== id) return a;
-      const updated = { ...a, ...patch, updatedAt: new Date().toISOString() };
-      if (patch.title !== undefined) updated.title = sanitizeText(patch.title).trim();
-      if (patch.body !== undefined) updated.body = sanitizeText(patch.body);
-      if (patch.notes !== undefined) updated.notes = sanitizeText(patch.notes);
-      return updated;
-    });
-    persistAds(next);
+  const updateAd = useCallback(async (id, patch) => {
+    const { data, error: updateError } = await supabase
+      .from('ads')
+      .update(adPatchToRow(patch))
+      .eq('id', id)
+      .select()
+      .single();
+    if (updateError) throw updateError;
+    setAdsState((list) => list.map((ad) => (ad.id === id ? adFromRow(data) : ad)));
   }, []);
 
-  const publishAd = useCallback((id, dateIso) => {
-    const now = new Date().toISOString();
-    const publishedAt = dateIso ? new Date(dateIso).toISOString() : now;
-    const next = getAds().map((a) => (
-      a.id === id ? { ...a, status: 'published', publishedAt, updatedAt: now } : a
-    ));
-    persistAds(next);
+  const publishAd = useCallback(async (id, dateIso) => {
+    const publishedAt = dateIso ? new Date(dateIso).toISOString() : new Date().toISOString();
+    await updateAd(id, { status: 'published', publishedAt });
+  }, [updateAd]);
+
+  const unpublishAd = useCallback(async (id) => {
+    await updateAd(id, { status: 'draft', publishedAt: null });
+  }, [updateAd]);
+
+  const deleteAd = useCallback(async (id) => {
+    const { error: deleteError } = await supabase.from('ads').delete().eq('id', id);
+    if (deleteError) throw deleteError;
+    setAdsState((list) => list.filter((ad) => ad.id !== id));
   }, []);
 
-  const unpublishAd = useCallback((id) => {
-    const now = new Date().toISOString();
-    const next = getAds().map((a) => (
-      a.id === id ? { ...a, status: 'draft', publishedAt: null, updatedAt: now } : a
-    ));
-    persistAds(next);
-  }, []);
+  const updateTemplate = useCallback(async (key, patch) => {
+    const current = templates[key] || DEFAULT_TEMPLATES[key];
+    const next = { ...current, ...patch };
+    const { error: upsertError } = await supabase
+      .from('templates')
+      .upsert({
+        key,
+        title: next.title,
+        body: next.body,
+        updated_at: new Date().toISOString()
+      });
+    if (upsertError) throw upsertError;
+    setTemplatesState((list) => ({ ...list, [key]: next }));
+  }, [templates]);
 
-  const deleteAd = useCallback((id) => {
-    persistAds(getAds().filter((a) => a.id !== id));
-  }, []);
-
-  // --- Templates ------------------------------------------------------------
-  const updateTemplate = useCallback((key, patch) => {
-    const next = { ...getTemplates() || DEFAULT_TEMPLATES };
-    next[key] = { ...next[key], ...patch };
-    persistTemplates(next);
-  }, []);
-
-  // --- Derived: reminders ---------------------------------------------------
   const remindersDue = useMemo(() => {
     const now = Date.now();
-    return leads.filter((l) => {
-      if (l.status !== STATUSES.HIRED || !l.hireDate) return false;
-      const hired = new Date(l.hireDate).getTime();
+    return leads.filter((lead) => {
+      if (lead.status !== STATUSES.HIRED || !lead.hireDate) return false;
+      const hired = new Date(lead.hireDate).getTime();
       if (Number.isNaN(hired)) return false;
       return now - hired >= TWO_MONTHS_MS;
     });
@@ -185,19 +291,27 @@ export function DataProvider({ children }) {
   const stats = useMemo(() => {
     const total = leads.length;
     const byStatus = {};
-    for (const s of Object.values(STATUSES)) byStatus[s] = 0;
-    for (const l of leads) byStatus[l.status] = (byStatus[l.status] || 0) + 1;
+    for (const status of Object.values(STATUSES)) byStatus[status] = 0;
+    for (const lead of leads) byStatus[lead.status] = (byStatus[lead.status] || 0) + 1;
     return { total, byStatus, reminders: remindersDue.length };
   }, [leads, remindersDue]);
 
   const value = useMemo(() => ({
     leads, areas, templates, ads,
+    loading, error, refreshData,
     createLead, updateLead, deleteLead,
     addArea, updateArea, deleteArea,
     updateTemplate,
     createAd, updateAd, publishAd, unpublishAd, deleteAd,
     remindersDue, stats
-  }), [leads, areas, templates, ads, createLead, updateLead, deleteLead, addArea, updateArea, deleteArea, updateTemplate, createAd, updateAd, publishAd, unpublishAd, deleteAd, remindersDue, stats]);
+  }), [
+    leads, areas, templates, ads, loading, error, refreshData,
+    createLead, updateLead, deleteLead,
+    addArea, updateArea, deleteArea,
+    updateTemplate,
+    createAd, updateAd, publishAd, unpublishAd, deleteAd,
+    remindersDue, stats
+  ]);
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
