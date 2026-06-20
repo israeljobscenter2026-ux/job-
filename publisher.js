@@ -1,4 +1,5 @@
 import { chromium } from 'playwright';
+import { createClient } from '@supabase/supabase-js';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,6 +12,7 @@ const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS]);
 const ROOT_DIR = process.cwd();
 const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const POSTS_FILE = path.join(ROOT_DIR, 'posts.json');
+const ENV_FILE = path.join(ROOT_DIR, '.env');
 const LOG_FILE = path.join(ROOT_DIR, 'publish-log.json');
 const PROFILE_DIR = path.join(ROOT_DIR, 'facebook-profile');
 const CACHE_DIR = path.join(ROOT_DIR, '.publisher-cache');
@@ -30,6 +32,7 @@ const rl = readline.createInterface({ input, output });
 try {
   const allGroups = await readJson(GROUPS_FILE, []);
   const posts = await readJson(POSTS_FILE, {});
+  const activeAd = await loadActiveAd();
 
   if (!Array.isArray(allGroups) || allGroups.length === 0) {
     throw new Error('groups.json ריק או לא תקין.');
@@ -39,7 +42,7 @@ try {
   const lapPlan = getLapPlan(allGroups, round);
   const groups = lapPlan.groups;
 
-  if (!posts[postRound]) {
+  if (!activeAd && !posts[postRound]) {
     throw new Error(`לא נמצאו טקסטים עבור הסבב "${postRound}" בקובץ posts.json.`);
   }
 
@@ -56,6 +59,11 @@ try {
     console.log(`חלוקת ${round}: קבוצות באינדקס ${lapPlan.startIndex + 1}-${lapPlan.endIndex} מתוך ${allGroups.length}.`);
   }
   console.log(`מספר קבוצות להרצה הזו: ${groups.length}.`);
+  if (activeAd) {
+    console.log('הבוט משתמש בפרסומת הפעילה מתוך המערכת.');
+  } else {
+    console.log('לא נמצאה פרסומת פעילה מהמערכת. הבוט משתמש בגיבוי מתוך posts.json.');
+  }
   console.log('חשוב: הכלי מכין טיוטה בלבד. הוא לא לוחץ על פרסום.\n');
 
   for (let index = 0; index < groups.length; index += 1) {
@@ -66,9 +74,10 @@ try {
     try {
       validateGroup(group, index);
 
-      // בחירת וריאציה לפי השפה של הקבוצה והוספת הקישור לדף השארת הפרטים.
-      const selectedPostText = selectPostText(posts, postRound, group.language);
-      preparedText = buildPreparedText(selectedPostText, group.link);
+      // הפרסומת הפעילה במערכת מחליפה את הטקסט/התמונה הישנים של הבוט.
+      const selectedPostText = activeAd?.body || selectPostText(posts, postRound, group.language);
+      const selectedImagePath = activeAd?.imagePath || group.imagePath;
+      preparedText = activeAd ? selectedPostText : buildPreparedText(selectedPostText, group.link);
 
       // אם כבר פרסמנו בקבוצה הזו ברבע שעה האחרונה, מדלגים כדי לא לפרסם כפול.
       if (await wasPreparedRecently(group.url, 15 * 60_000)) {
@@ -93,11 +102,12 @@ try {
         group,
         round,
         preparedText,
+        imagePath: selectedImagePath,
         index,
         total: groups.length
       });
 
-      const result = await prepareFacebookDraft(page, group, preparedText);
+      const result = await prepareFacebookDraft(page, { ...group, imagePath: selectedImagePath }, preparedText);
       if (result.ok) {
         console.log('הטיוטה הוכנה בפייסבוק. בדוק אותה ולחץ פרסום ידנית.');
         console.log('אחרי שהחלון ייסגר בעקבות הפרסום, הכלי יעבור אוטומטית לקבוצה הבאה.');
@@ -409,6 +419,81 @@ async function readJson(filePath, fallback) {
   }
 }
 
+async function loadActiveAd() {
+  const env = await readLocalEnv();
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return null;
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+
+  const { data, error } = await supabase
+    .from('ads')
+    .select('id,body,image,published_at,status')
+    .eq('status', 'published')
+    .order('published_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.log(`לא הצלחתי למשוך פרסומת פעילה מהמערכת: ${error.message}`);
+    return null;
+  }
+
+  if (!data?.body && !data?.image) return null;
+
+  return {
+    id: data.id,
+    body: data.body || '',
+    imagePath: data.image ? await saveActiveAdImage(data.image) : '',
+    publishedAt: data.published_at
+  };
+}
+
+async function readLocalEnv() {
+  const env = { ...process.env };
+
+  try {
+    const content = await fs.readFile(ENV_FILE, 'utf8');
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || !line.includes('=')) continue;
+      const [key, ...valueParts] = line.split('=');
+      const value = valueParts.join('=').trim().replace(/^["']|["']$/g, '');
+      if (!env[key.trim()]) env[key.trim()] = value;
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  return env;
+}
+
+async function saveActiveAdImage(dataUrl) {
+  const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+  if (!match) return '';
+
+  const mimeType = match[1];
+  const base64 = match[2];
+  const extByMime = {
+    'image/jpeg': '.jpg',
+    'image/jpg': '.jpg',
+    'image/png': '.png',
+    'image/webp': '.webp'
+  };
+  const ext = extByMime[mimeType] || '.png';
+
+  await fs.mkdir(CACHE_DIR, { recursive: true });
+  const imagePath = path.join(CACHE_DIR, `active-ad${ext}`);
+  await fs.writeFile(imagePath, Buffer.from(base64, 'base64'));
+  return imagePath;
+}
+
 async function writeJson(filePath, data) {
   await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
 }
@@ -516,14 +601,14 @@ function pipeToCommand(command, commandArgs, text) {
   });
 }
 
-function printGroupInstructions({ group, round: activeRound, preparedText, index, total }) {
+function printGroupInstructions({ group, round: activeRound, preparedText, imagePath, index, total }) {
   console.log('\n========================================');
   console.log(`קבוצה ${index + 1}/${total}`);
   console.log(`שם: ${group.name}`);
   console.log(`שפה: ${group.language}`);
   console.log(`סבב: ${activeRound}`);
   console.log(`קישור: ${group.url}`);
-  console.log(`תמונה: ${group.imagePath || 'לא הוגדרה'}`);
+  console.log(`תמונה: ${imagePath || 'לא הוגדרה'}`);
   console.log(`לינק שצורף לפוסט: ${group.link || 'לא הוגדר'}`);
   console.log('----------------------------------------');
   console.log('הטקסט שיודבק בפייסבוק:');

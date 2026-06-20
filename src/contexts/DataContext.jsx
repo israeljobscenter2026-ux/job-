@@ -274,8 +274,14 @@ export function DataProvider({ children }) {
 
   const publishAd = useCallback(async (id, dateIso) => {
     const publishedAt = dateIso ? new Date(dateIso).toISOString() : new Date().toISOString();
+    const { error: draftError } = await supabase
+      .from('ads')
+      .update({ status: 'draft', published_at: null, updated_at: new Date().toISOString() })
+      .neq('id', id);
+    if (draftError) throw draftError;
     await updateAd(id, { status: 'published', publishedAt });
-  }, [updateAd]);
+    await refreshData();
+  }, [refreshData, updateAd]);
 
   const unpublishAd = useCallback(async (id) => {
     await updateAd(id, { status: 'draft', publishedAt: null });
