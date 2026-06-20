@@ -2,16 +2,19 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../contexts/DataContext.jsx';
 import Modal from '../components/Modal.jsx';
 import { fileToResizedDataUrl, approxDataUrlKB } from '../lib/image.js';
+import publisherGroups from '../../groups.json';
 
 const STATUS_LABEL = { draft: 'טיוטה', published: 'פורסם' };
 const STATUS_COLOR = {
   draft: 'bg-amber-100 text-amber-800 border border-amber-200',
   published: 'bg-emerald-100 text-emerald-800 border border-emerald-200'
 };
+const PUBLISHER_COMMANDS = buildPublisherCommands(publisherGroups);
 
 export default function AdsPage() {
   const { ads, createAd, updateAd, publishAd, unpublishAd, deleteAd } = useData();
   const [filter, setFilter] = useState('all');
+  const [copiedCommand, setCopiedCommand] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [publishTarget, setPublishTarget] = useState(null);
@@ -51,6 +54,11 @@ export default function AdsPage() {
     setDeleteTarget(null);
     setDeleteStep(0);
   }
+  async function copyCommand(command) {
+    await copyText(command);
+    setCopiedCommand(command);
+    window.setTimeout(() => setCopiedCommand(''), 1600);
+  }
 
   const editingAd = editingId ? ads.find((a) => a.id === editingId) : null;
 
@@ -66,6 +74,12 @@ export default function AdsPage() {
           פרסומת חדשה
         </button>
       </header>
+
+      <PublisherCommandsPanel
+        commands={PUBLISHER_COMMANDS}
+        copiedCommand={copiedCommand}
+        onCopy={copyCommand}
+      />
 
       <div className="flex gap-2 flex-wrap">
         <FilterChip active={filter === 'all'} onClick={() => setFilter('all')} label={`הכול (${counts.all})`} />
@@ -150,6 +164,46 @@ function FilterChip({ active, onClick, label }) {
     >
       {label}
     </button>
+  );
+}
+
+function PublisherCommandsPanel({ commands, copiedCommand, onCopy }) {
+  return (
+    <section className="card p-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">פקודות פרסום</h2>
+          <p className="text-xs text-slate-500">בחר סבב, העתק פקודה והרץ אותה במחשב שמפעיל את הבוט.</p>
+        </div>
+        <span className="badge bg-slate-100 text-slate-700 border border-slate-200">
+          {commands.reduce((sum, item) => sum + (item.primary ? item.count : 0), 0)} קבוצות בסבבים הראשיים
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {commands.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onCopy(item.command)}
+            className="group rounded-lg border border-slate-200 bg-white p-3 text-right hover:border-brand-300 hover:bg-brand-50/40 transition shadow-sm"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-bold text-slate-900">{item.label}</div>
+                <div className="text-xs text-slate-500">{item.count} קבוצות</div>
+              </div>
+              <span className={`badge shrink-0 ${copiedCommand === item.command ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-brand-100 text-brand-700 border border-brand-200'}`}>
+                {copiedCommand === item.command ? 'הועתק' : 'העתק'}
+              </span>
+            </div>
+            <code dir="ltr" className="mt-3 block rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white overflow-x-auto">
+              {item.command}
+            </code>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -347,4 +401,98 @@ function PublishDialog({ ad, onClose, onConfirm }) {
       </label>
     </Modal>
   );
+}
+
+function buildPublisherCommands(groups) {
+  const buckets = {
+    allcountry: [],
+    north: [],
+    center: [],
+    jerusalem: [],
+    sharon: [],
+    south: []
+  };
+
+  groups.forEach((group) => {
+    if (isAllCountryGroup(group)) {
+      buckets.allcountry.push(group);
+      return;
+    }
+    buckets[detectGroupRegion(group)].push(group);
+  });
+
+  const lapCounts = getLapCounts(groups, 4);
+  const command = (round) => `node publisher.js ${round} --dev`;
+
+  return [
+    { key: 'allcountry', label: 'כל הארץ', count: buckets.allcountry.length, command: command('allcountry'), primary: true },
+    { key: 'all1', label: 'כל הארץ 1', count: buckets.allcountry.slice(0, 25).length, command: command('all1') },
+    { key: 'all2', label: 'כל הארץ 2', count: buckets.allcountry.slice(25, 50).length, command: command('all2') },
+    { key: 'north', label: 'צפון', count: buckets.north.length, command: command('north'), primary: true },
+    { key: 'center', label: 'מרכז', count: buckets.center.length, command: command('center'), primary: true },
+    { key: 'jerusalem', label: 'ירושלים והסביבה', count: buckets.jerusalem.length, command: command('jerusalem'), primary: true },
+    { key: 'sharon', label: 'השרון', count: buckets.sharon.length, command: command('sharon'), primary: true },
+    { key: 'south', label: 'דרום', count: buckets.south.length, command: command('south'), primary: true },
+    { key: 'lap1', label: 'Lap 1', count: lapCounts[0], command: command('lap1') },
+    { key: 'lap2', label: 'Lap 2', count: lapCounts[1], command: command('lap2') },
+    { key: 'lap3', label: 'Lap 3', count: lapCounts[2], command: command('lap3') },
+    { key: 'lap4', label: 'Lap 4', count: lapCounts[3], command: command('lap4') }
+  ];
+}
+
+function getLapCounts(groups, lapCount) {
+  const baseSize = Math.floor(groups.length / lapCount);
+  const remainder = groups.length % lapCount;
+  return Array.from({ length: lapCount }, (_, index) => baseSize + (index < remainder ? 1 : 0));
+}
+
+function isAllCountryGroup(group) {
+  const name = normalizeHebrewText(group?.name || '');
+  const explicitAllCountry = hasAny(name, ['בכל הארץ', 'כל הארץ', 'כל רחבי הארץ', 'כלל ארצי']);
+  const multiRegion = hasAny(name, ['מרכז']) && hasAny(name, ['צפון', 'דרום', 'ירושלים']);
+  return explicitAllCountry || multiRegion;
+}
+
+function detectGroupRegion(group) {
+  const name = normalizeHebrewText(group?.name || '');
+
+  if (hasAny(name, ['ירושלים'])) return 'jerusalem';
+  if (hasAny(name, ['עמק חפר', 'השרון', 'שרון', 'חדרה', 'נתניה', 'רעננה', 'הרצליה'])) return 'sharon';
+  if (hasAny(name, ['חיפה', 'קריות', 'הקריות', 'נשר', 'עכו', 'צפון']) && !hasAny(name, ['תל אביב', 'ת א', 'תא'])) {
+    return 'north';
+  }
+  if (hasAny(name, ['שדרות', 'אשדוד', 'קריית גת', 'באר שבע', 'נתיבות', 'דימונה', 'רהט', 'גדרה', 'יבנה', 'רחובות', 'דרום'])) {
+    return 'south';
+  }
+  return 'center';
+}
+
+function normalizeHebrewText(value) {
+  return String(value)
+    .replace(/[״"]/g, '')
+    .replace(/[׳']/g, '')
+    .replace(/[-_/\\|,().:;!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasAny(value, needles) {
+  return needles.some((needle) => value.includes(needle));
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.setAttribute('readonly', '');
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
 }
