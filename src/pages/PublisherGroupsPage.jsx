@@ -12,11 +12,13 @@ const REGION_OPTIONS = [
 ];
 
 export default function PublisherGroupsPage() {
-  const { publisherGroups, addPublisherGroup } = useData();
+  const { publisherGroups, addPublisherGroup, refreshData } = useData();
   const [form, setForm] = useState({ name: '', url: '', region: 'auto' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const [scanCopied, setScanCopied] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanResult, setScanResult] = useState(null);
+  const [scanError, setScanError] = useState('');
 
   const grouped = useMemo(() => {
     const next = Object.fromEntries(REGION_OPTIONS.filter((region) => region.value !== 'auto').map((region) => [region.value, []]));
@@ -50,10 +52,32 @@ export default function PublisherGroupsPage() {
     }
   }
 
-  async function copyScanCommand() {
-    await copyText('node export-facebook-groups.js');
-    setScanCopied(true);
-    window.setTimeout(() => setScanCopied(false), 1800);
+  async function runFacebookScan() {
+    setScanBusy(true);
+    setScanResult(null);
+    setScanError('');
+
+    try {
+      const response = await fetch('http://127.0.0.1:4545/scan-facebook-groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'לא הצלחנו להריץ את הסריקה.');
+      }
+
+      setScanResult(payload);
+      await refreshData();
+    } catch (error) {
+      const isConnectionError = error instanceof TypeError;
+      setScanError(isConnectionError
+        ? 'כדי להריץ סריקה יש להפעיל קודם את השירות המקומי: npm run scan:server'
+        : error.message || 'לא הצלחנו להריץ את הסריקה.');
+    } finally {
+      setScanBusy(false);
+    }
   }
 
   return (
@@ -63,8 +87,8 @@ export default function PublisherGroupsPage() {
           <h1 className="text-2xl font-bold">ניהול קבוצות פרסום</h1>
           <p className="text-slate-500 text-sm">הקבוצות מסודרות לפי אזורים. קבוצה חדשה שתתווסף כאן תיכנס גם להרצות של הבוט.</p>
         </div>
-        <button type="button" className="btn-secondary" onClick={copyScanCommand}>
-          {scanCopied ? 'הפקודה הועתקה' : 'סריקת קבוצות'}
+        <button type="button" className="btn-secondary" onClick={runFacebookScan} disabled={scanBusy}>
+          {scanBusy ? 'סורק קבוצות...' : ' סרוק קבוצות מפייסבוק'}
         </button>
       </header>
 
@@ -72,10 +96,20 @@ export default function PublisherGroupsPage() {
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
             <h2 className="font-bold text-slate-900">סריקה אוטומטית מפייסבוק</h2>
-            <p className="text-sm text-slate-500">הפעל במחשב את הפקודה, אשר כניסה לפייסבוק אם צריך, והקבוצות החדשות יתווספו למערכת ולבוט.</p>
+            <p className="text-sm text-slate-500">הפעל את השירות המקומי פעם אחת במחשב, ואז אפשר להריץ את הסריקה מהכפתור במסך.</p>
+            {scanResult && (
+              <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                נמצאו {scanResult.found} קבוצות · נוספו {scanResult.added} קבוצות חדשות · דולגו {scanResult.skipped} קבוצות קיימות
+              </div>
+            )}
+            {scanError && (
+              <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+                {scanError}
+              </div>
+            )}
           </div>
           <code dir="ltr" className="rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white">
-            node export-facebook-groups.js
+            npm run scan:server
           </code>
         </div>
       </section>
@@ -155,21 +189,4 @@ export default function PublisherGroupsPage() {
       </div>
     </div>
   );
-}
-
-async function copyText(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-
-  const el = document.createElement('textarea');
-  el.value = text;
-  el.setAttribute('readonly', '');
-  el.style.position = 'fixed';
-  el.style.opacity = '0';
-  document.body.appendChild(el);
-  el.select();
-  document.execCommand('copy');
-  document.body.removeChild(el);
 }

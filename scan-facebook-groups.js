@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { pathToFileURL } from 'node:url';
 
 const ROOT_DIR = process.cwd();
 const ENV_FILE = path.join(ROOT_DIR, '.env');
@@ -11,58 +12,72 @@ const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const PROFILE_DIR = path.join(ROOT_DIR, 'facebook-profile');
 const OUTPUT_JSON = path.join(ROOT_DIR, 'facebook-groups-scan.json');
 const LANDING_PAGE_URL = 'https://israel-jobs-center2026.netlify.app/';
-const DEFAULT_GROUP_IMAGE_PATH = 'C:/Users/emil1/Documents/מערכת למשרות/assets/ChatGPT_Image_Jun_18_2026_10_19_30_PM.png';
+const DEFAULT_GROUP_IMAGE_PATH = path.join(
+  ROOT_DIR,
+  'assets',
+  'ChatGPT_Image_Jun_18_2026_10_19_30_PM.png'
+);
 
-const rl = readline.createInterface({ input, output });
+export async function runFacebookGroupScan(options = {}) {
+  const interactive = options.interactive ?? false;
+  const logger = options.logger || console;
+  const rl = interactive ? readline.createInterface({ input, output }) : null;
 
-try {
-  const env = await readLocalEnv();
-  const scannedGroups = await scanFacebookGroups();
-  const normalizedGroups = uniqueGroups(scannedGroups).map((group) => ({
-    name: group.name,
-    url: normalizeUrl(group.url),
-    language: 'he',
-    image_path: DEFAULT_GROUP_IMAGE_PATH,
-    link: LANDING_PAGE_URL,
-    region: detectGroupRegion(group),
-    active: true,
-    updated_at: new Date().toISOString()
-  }));
+  try {
+    const env = await readLocalEnv();
+    const scannedGroups = await scanFacebookGroups({ interactive, logger, rl });
+    const normalizedGroups = uniqueGroups(scannedGroups).map((group) => ({
+      name: group.name,
+      url: normalizeUrl(group.url),
+      language: 'he',
+      image_path: DEFAULT_GROUP_IMAGE_PATH,
+      link: LANDING_PAGE_URL,
+      region: detectGroupRegion(group),
+      active: true,
+      updated_at: new Date().toISOString()
+    }));
 
-  await fs.writeFile(OUTPUT_JSON, `${JSON.stringify(normalizedGroups, null, 2)}\n`, 'utf8');
+    await fs.writeFile(OUTPUT_JSON, `${JSON.stringify(normalizedGroups, null, 2)}\n`, 'utf8');
 
-  const supabase = await createAuthenticatedSupabase(env);
-  const existingUrls = await loadExistingGroupUrls(supabase);
-  for (const group of await readJson(GROUPS_FILE, [])) {
-    existingUrls.add(normalizeUrl(group.url));
+    const supabase = createSupabaseServiceClient(env);
+    const existingUrls = await loadExistingGroupUrls(supabase);
+    for (const group of await readJson(GROUPS_FILE, [])) {
+      existingUrls.add(normalizeUrl(group.url));
+    }
+
+    const newGroups = normalizedGroups.filter((group) => !existingUrls.has(normalizeUrl(group.url)));
+    const skippedGroups = normalizedGroups.length - newGroups.length;
+
+    if (newGroups.length > 0) {
+      const { error } = await supabase
+        .from('publisher_groups')
+        .insert(newGroups);
+      if (error) throw error;
+    }
+
+    const summary = {
+      found: normalizedGroups.length,
+      added: newGroups.length,
+      skipped: skippedGroups,
+      backupFile: OUTPUT_JSON
+    };
+
+    logger.log('');
+    logger.log('========================================');
+    logger.log(`Found ${summary.found} groups`);
+    logger.log(`Added ${summary.added} new groups`);
+    logger.log(`Skipped ${summary.skipped} existing groups`);
+    logger.log(`Backup file created: ${OUTPUT_JSON}`);
+    logger.log('========================================');
+
+    return summary;
+  } finally {
+    if (rl) rl.close();
   }
-
-  const newGroups = normalizedGroups.filter((group) => !existingUrls.has(normalizeUrl(group.url)));
-  const skippedGroups = normalizedGroups.length - newGroups.length;
-
-  if (newGroups.length > 0) {
-    const { error } = await supabase
-      .from('publisher_groups')
-      .insert(newGroups);
-    if (error) throw error;
-  }
-
-  console.log('');
-  console.log('========================================');
-  console.log(`Found ${normalizedGroups.length} groups`);
-  console.log(`Added ${newGroups.length} new groups`);
-  console.log(`Skipped ${skippedGroups} existing groups`);
-  console.log(`Backup file created: ${OUTPUT_JSON}`);
-  console.log('========================================');
-} catch (error) {
-  console.error(`Scan error: ${error.message}`);
-  process.exitCode = 1;
-} finally {
-  rl.close();
 }
 
-async function scanFacebookGroups() {
-  // משתמשים בפרופיל הקבוע של Playwright כדי להישאר מחוברים לפייסבוק בין הרצות.
+async function scanFacebookGroups({ interactive, logger, rl }) {
+  // משתמשים בפרופיל קבוע כדי שפייסבוק יישאר מחובר בין הרצות.
   const context = await chromium.launchPersistentContext(PROFILE_DIR, {
     headless: false,
     viewport: { width: 1366, height: 900 }
@@ -71,9 +86,15 @@ async function scanFacebookGroups() {
   try {
     const page = context.pages()[0] || await context.newPage();
     await page.goto('https://www.facebook.com/groups/joins/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('Facebook groups page opened.');
-    console.log('If Facebook asks you to login or confirm something, do it in the browser, then press Enter here.');
-    await rl.question('');
+    logger.log('Facebook groups page opened.');
+
+    if (interactive) {
+      logger.log('If Facebook asks you to login or confirm something, do it in the browser, then press Enter here.');
+      await rl.question('');
+    } else {
+      logger.log('Waiting a few seconds before scanning. Complete Facebook prompts in the opened browser if needed.');
+      await page.waitForTimeout(7000);
+    }
 
     const groups = new Map();
     for (let i = 0; i < 80; i += 1) {
@@ -98,7 +119,7 @@ async function scanFacebookGroups() {
         groups.set(normalizeUrl(item.url), { name, url: normalizeUrl(item.url) });
       }
 
-      console.log(`Found so far: ${groups.size}`);
+      logger.log(`Found so far: ${groups.size}`);
     }
 
     return [...groups.values()];
@@ -107,23 +128,17 @@ async function scanFacebookGroups() {
   }
 }
 
-async function createAuthenticatedSupabase(env) {
+function createSupabaseServiceClient(env) {
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
-  if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env');
+  const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error('Missing SUPABASE_URL / VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in .env');
   }
 
-  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  // מפתח Service Role נשאר רק בסקריפט המקומי בצד Node ולא נשלח ל-Frontend.
+  return createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
-
-  console.log('Facebook scan finished. Now login to the system so new groups can be saved.');
-  const email = env.SUPABASE_LOGIN_EMAIL || await rl.question('System email: ');
-  const password = env.SUPABASE_LOGIN_PASSWORD || await rl.question('System password: ');
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(`System login failed: ${error.message}`);
-  return supabase;
 }
 
 async function loadExistingGroupUrls(supabase) {
@@ -222,4 +237,11 @@ async function readJson(filePath, fallback) {
     if (error.code === 'ENOENT') return fallback;
     throw error;
   }
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runFacebookGroupScan({ interactive: true }).catch((error) => {
+    console.error(`Scan error: ${error.message}`);
+    process.exitCode = 1;
+  });
 }
