@@ -38,17 +38,20 @@ try {
   }
 
   const newGroups = normalizedGroups.filter((group) => !existingUrls.has(normalizeUrl(group.url)));
-  if (normalizedGroups.length > 0) {
+  const skippedGroups = normalizedGroups.length - newGroups.length;
+
+  if (newGroups.length > 0) {
     const { error } = await supabase
       .from('publisher_groups')
-      .upsert(normalizedGroups, { onConflict: 'url' });
+      .insert(newGroups);
     if (error) throw error;
   }
 
   console.log('');
   console.log('========================================');
-  console.log(`Scanned groups: ${normalizedGroups.length}`);
-  console.log(`New groups added to the system and bot: ${newGroups.length}`);
+  console.log(`Found ${normalizedGroups.length} groups`);
+  console.log(`Added ${newGroups.length} new groups`);
+  console.log(`Skipped ${skippedGroups} existing groups`);
   console.log(`Backup file created: ${OUTPUT_JSON}`);
   console.log('========================================');
 } catch (error) {
