@@ -9,8 +9,7 @@ import { stdin as input, stdout as output } from 'node:process';
 const TIME_ROUNDS = new Set(['morning', 'noon', 'evening']);
 const LAP_ROUNDS = new Set(['lap1', 'lap2', 'lap3', 'lap4']);
 const REGION_ROUNDS = new Set(['north', 'center', 'jerusalem', 'sharon', 'south']);
-const ALL_COUNTRY_ROUNDS = new Set(['allcountry', 'all1', 'all2']);
-const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS, ...REGION_ROUNDS, ...ALL_COUNTRY_ROUNDS]);
+const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS, ...REGION_ROUNDS]);
 const REGION_LABELS = {
   north: 'צפון',
   center: 'מרכז',
@@ -20,8 +19,7 @@ const REGION_LABELS = {
 };
 const ALL_COUNTRY_LABELS = {
   allcountry: 'כל הארץ',
-  all1: 'כל הארץ 1',
-  all2: 'כל הארץ 2'
+  all1: 'כל הארץ 1'
 };
 const REGION_ALIASES = {
   north: 'north',
@@ -65,8 +63,8 @@ const args = process.argv.slice(2);
 const round = normalizeRoundArg(args.filter((arg) => !arg.startsWith('-')));
 const isDevMode = args.includes('--dev') || process.env.PUBLISHER_DEV === '1' || process.env.DEV_DELAY === '1';
 
-if (!VALID_ROUNDS.has(round)) {
-  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south|allcountry|all1|all2|lap1|lap2|lap3|lap4 [--dev]');
+if (!isValidRound(round)) {
+  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south|all1|all2|lap1|lap2|lap3|lap4 [--dev]');
   console.error('Example: node publisher.js all1 --dev');
   process.exit(1);
 }
@@ -605,9 +603,17 @@ function normalizeRoundArg(positionArgs) {
   return REGION_ALIASES[cleanFirst] || cleanFirst;
 }
 
+function isValidRound(activeRound) {
+  return VALID_ROUNDS.has(activeRound) || isAllCountryRound(activeRound);
+}
+
+function isAllCountryRound(activeRound) {
+  return activeRound === 'allcountry' || /^all\d+$/.test(activeRound);
+}
+
 function getPostRound(activeRound) {
   // סבבי חלוקה מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
-  return REGION_ROUNDS.has(activeRound) || LAP_ROUNDS.has(activeRound) || ALL_COUNTRY_ROUNDS.has(activeRound)
+  return REGION_ROUNDS.has(activeRound) || LAP_ROUNDS.has(activeRound) || isAllCountryRound(activeRound)
     ? 'morning'
     : activeRound;
 }
@@ -631,16 +637,14 @@ function getRoundPlan(allGroups, activeRound) {
     };
   }
 
-  if (ALL_COUNTRY_ROUNDS.has(activeRound)) {
+  if (isAllCountryRound(activeRound)) {
     const allCountryGroups = allGroups.filter((group) => isAllCountryGroup(group));
-    const groups = activeRound === 'allcountry'
-      ? allCountryGroups
-      : getAllCountryChunk(allCountryGroups, activeRound);
+    const groups = getAllCountryChunk(allCountryGroups, activeRound);
 
     return {
       groups,
       isRegion: true,
-      label: ALL_COUNTRY_LABELS[activeRound] || activeRound,
+      label: ALL_COUNTRY_LABELS[activeRound] || `כל הארץ ${getAllCountryRoundNumber(activeRound)}`,
       startIndex: 0,
       endIndex: allGroups.length
     };
@@ -667,9 +671,15 @@ function getRoundPlan(allGroups, activeRound) {
 
 function getAllCountryChunk(groups, activeRound) {
   const chunkSize = 25;
-  const chunkIndex = Number(activeRound.replace('all', '')) - 1;
+  const chunkIndex = getAllCountryRoundNumber(activeRound) - 1;
   const startIndex = chunkIndex * chunkSize;
   return groups.slice(startIndex, startIndex + chunkSize);
+}
+
+function getAllCountryRoundNumber(activeRound) {
+  if (activeRound === 'allcountry') return 1;
+  const value = Number(activeRound.replace('all', ''));
+  return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
 function isAllCountryGroup(group) {
@@ -742,7 +752,28 @@ function detectGroupRegion(group) {
     return 'south';
   }
 
-  return 'center';
+  if (hasAny(name, [
+    'מרכז',
+    'תל אביב',
+    'ת א',
+    'תא',
+    'פתח תקווה',
+    'פ ת',
+    'פתח תקוה',
+    'חולון',
+    'בת ים',
+    'ראשון לציון',
+    'רמלה',
+    'לוד',
+    'גוש דן',
+    'ראש העין',
+    'רמת גן',
+    'גבעתיים'
+  ])) {
+    return 'center';
+  }
+
+  return 'allcountry';
 }
 
 function normalizeHebrewText(value) {

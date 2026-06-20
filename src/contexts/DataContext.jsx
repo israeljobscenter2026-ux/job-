@@ -131,13 +131,16 @@ function publisherGroupFromRow(row) {
 }
 
 function publisherGroupToRow(payload) {
+  const region = payload.region && payload.region !== 'auto'
+    ? payload.region
+    : detectPublisherGroupRegion(payload);
   return {
     name: sanitizeText(payload.name || '').trim(),
     url: sanitizeText(payload.url || '').trim(),
     language: payload.language || 'he',
     image_path: payload.imagePath || DEFAULT_GROUP_IMAGE_PATH,
     link: payload.link || LANDING_PAGE_URL,
-    region: payload.region || detectPublisherGroupRegion(payload),
+    region,
     active: true
   };
 }
@@ -184,7 +187,8 @@ function detectPublisherGroupRegion(group) {
   if (hasAny(name, ['עמק חפר', 'השרון', 'שרון', 'חדרה', 'נתניה', 'רעננה', 'הרצליה'])) return 'sharon';
   if (hasAny(name, ['חיפה', 'קריות', 'הקריות', 'נשר', 'עכו', 'צפון']) && !hasAny(name, ['תל אביב', 'ת א', 'תא'])) return 'north';
   if (hasAny(name, ['שדרות', 'אשדוד', 'קריית גת', 'באר שבע', 'נתיבות', 'דימונה', 'רהט', 'גדרה', 'יבנה', 'רחובות', 'דרום'])) return 'south';
-  return 'center';
+  if (hasAny(name, ['מרכז', 'תל אביב', 'ת א', 'תא', 'פתח תקווה', 'פ ת', 'פתח תקוה', 'חולון', 'בת ים', 'ראשון לציון', 'רמלה', 'לוד', 'גוש דן', 'ראש העין', 'רמת גן', 'גבעתיים'])) return 'center';
+  return 'allcountry';
 }
 
 function isAllCountryPublisherGroup(group) {

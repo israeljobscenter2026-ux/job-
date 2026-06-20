@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useData } from '../contexts/DataContext.jsx';
 
 const REGION_OPTIONS = [
+  { value: 'auto', label: 'זיהוי אוטומטי' },
   { value: 'north', label: 'צפון' },
   { value: 'center', label: 'מרכז' },
   { value: 'jerusalem', label: 'ירושלים והסביבה' },
@@ -12,12 +13,12 @@ const REGION_OPTIONS = [
 
 export default function PublisherGroupsPage() {
   const { publisherGroups, addPublisherGroup } = useData();
-  const [form, setForm] = useState({ name: '', url: '', region: 'center' });
+  const [form, setForm] = useState({ name: '', url: '', region: 'auto' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
 
   const grouped = useMemo(() => {
-    const next = Object.fromEntries(REGION_OPTIONS.map((region) => [region.value, []]));
+    const next = Object.fromEntries(REGION_OPTIONS.filter((region) => region.value !== 'auto').map((region) => [region.value, []]));
     for (const group of publisherGroups) {
       const region = next[group.region] ? group.region : 'center';
       next[region].push(group);
@@ -90,7 +91,7 @@ export default function PublisherGroupsPage() {
       </form>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-        {REGION_OPTIONS.map((region) => (
+        {REGION_OPTIONS.filter((region) => region.value !== 'auto').map((region) => (
           <section key={region.value} className="card overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
               <h2 className="font-bold">{region.label}</h2>

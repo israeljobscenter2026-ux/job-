@@ -422,11 +422,16 @@ function buildPublisherCommands(groups) {
 
   const lapCounts = getLapCounts(groups, 4);
   const command = (round) => `node publisher.js ${round} --dev`;
+  const allCountryCommands = getChunks(buckets.allcountry, 25).map((chunk, index, chunks) => ({
+    key: `all${index + 1}`,
+    label: chunks.length === 1 ? 'כל הארץ' : `כל הארץ ${index + 1}`,
+    count: chunk.length,
+    command: command(`all${index + 1}`),
+    primary: true
+  }));
 
   return [
-    { key: 'allcountry', label: 'כל הארץ', count: buckets.allcountry.length, command: command('allcountry'), primary: true },
-    { key: 'all1', label: 'כל הארץ 1', count: buckets.allcountry.slice(0, 25).length, command: command('all1') },
-    { key: 'all2', label: 'כל הארץ 2', count: buckets.allcountry.slice(25, 50).length, command: command('all2') },
+    ...allCountryCommands,
     { key: 'north', label: 'צפון', count: buckets.north.length, command: command('north'), primary: true },
     { key: 'center', label: 'מרכז', count: buckets.center.length, command: command('center'), primary: true },
     { key: 'jerusalem', label: 'ירושלים והסביבה', count: buckets.jerusalem.length, command: command('jerusalem'), primary: true },
@@ -443,6 +448,15 @@ function getLapCounts(groups, lapCount) {
   const baseSize = Math.floor(groups.length / lapCount);
   const remainder = groups.length % lapCount;
   return Array.from({ length: lapCount }, (_, index) => baseSize + (index < remainder ? 1 : 0));
+}
+
+function getChunks(items, chunkSize) {
+  if (items.length === 0) return [[]];
+  const chunks = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+  return chunks;
 }
 
 function isAllCountryGroup(group) {
@@ -465,7 +479,10 @@ function detectGroupRegion(group) {
   if (hasAny(name, ['שדרות', 'אשדוד', 'קריית גת', 'באר שבע', 'נתיבות', 'דימונה', 'רהט', 'גדרה', 'יבנה', 'רחובות', 'דרום'])) {
     return 'south';
   }
-  return 'center';
+  if (hasAny(name, ['מרכז', 'תל אביב', 'ת א', 'תא', 'פתח תקווה', 'פ ת', 'פתח תקוה', 'חולון', 'בת ים', 'ראשון לציון', 'רמלה', 'לוד', 'גוש דן', 'ראש העין', 'רמת גן', 'גבעתיים'])) {
+    return 'center';
+  }
+  return 'allcountry';
 }
 
 function normalizeHebrewText(value) {
