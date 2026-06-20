@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import StatusBadge from './StatusBadge.jsx';
 import { JOB_TYPE_LABELS, STATUSES } from '../lib/statuses.js';
+import { getLeadJobTitle } from '../lib/jobCatalog.js';
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
 
@@ -9,6 +10,8 @@ export default function LeadListItem({ lead, extraBadge }) {
     Date.now() - new Date(lead.hireDate).getTime() >= TWO_MONTHS_MS;
   const created = new Date(lead.createdAt).toLocaleDateString('he-IL');
   const initials = `${(lead.firstName || '?').slice(0, 1)}${(lead.lastName || '').slice(0, 1)}`.toUpperCase();
+  const location = [lead.area, lead.city].filter(Boolean).join(' / ');
+  const job = [lead.project, getLeadJobTitle(lead) || JOB_TYPE_LABELS[lead.jobType]].filter(Boolean).join(' - ');
   return (
     <Link
       to={`/admin/leads/${lead.id}`}
@@ -28,7 +31,7 @@ export default function LeadListItem({ lead, extraBadge }) {
             )}
             {extraBadge}
           </div>
-          <div className="text-xs text-slate-500 mt-0.5 truncate">{JOB_TYPE_LABELS[lead.jobType] || '-'} · {lead.area}</div>
+          <div className="text-xs text-slate-500 mt-0.5 truncate">{job || '-'} · {location || '-'}</div>
         </div>
         <StatusBadge status={lead.status} />
       </div>

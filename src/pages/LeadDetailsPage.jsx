@@ -6,8 +6,7 @@ import {
   STATUSES,
   STATUS_LABELS,
   STATUS_ORDER,
-  JOB_TYPE_LABELS,
-  JOB_TYPE_LIST
+  JOB_TYPE_LABELS
 } from '../lib/statuses.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import Modal from '../components/Modal.jsx';
@@ -19,13 +18,14 @@ import {
   normalizeId
 } from '../lib/validation.js';
 import { buildWhatsappUrl, fillTemplate, TEMPLATE_KEYS } from '../lib/whatsapp.js';
+import { getAreas, getCities, getProjects, getRoles, getLeadJobTitle } from '../lib/jobCatalog.js';
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
 
 export default function LeadDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { leads, areas, templates, updateLead, deleteLead } = useData();
+  const { leads, templates, updateLead, deleteLead } = useData();
   const { user } = useAuth();
   const lead = useMemo(() => leads.find((l) => l.id === id), [leads, id]);
 
@@ -119,7 +119,9 @@ export default function LeadDetailsPage() {
             <Row label="טלפון נייד" value={<a href={`tel:${lead.phone}`} className="font-mono ltr-cell text-brand-700 hover:underline">{lead.phone}</a>} />
             <Row label="תעודת זהות" value={<span className="font-mono ltr-cell">{lead.idNumber}</span>} />
             <Row label="אזור / אתר" value={lead.area} />
-            <Row label="סוג משרה" value={JOB_TYPE_LABELS[lead.jobType] || '-'} />
+            <Row label="עיר" value={lead.city} />
+            <Row label="פרויקט / מוקד" value={lead.project} />
+            <Row label="משרה" value={getLeadJobTitle(lead) || JOB_TYPE_LABELS[lead.jobType] || '-'} />
             <Row label="תאריך עדכון" value={fmtDateTime(lead.updatedAt)} />
             {lead.hireDate && <Row label="תאריך קליטה" value={fmtDate(lead.hireDate)} />}
           </dl>
@@ -207,7 +209,6 @@ export default function LeadDetailsPage() {
         open={editOpen}
         onClose={() => setEditOpen(false)}
         lead={lead}
-        areas={areas}
         onSave={(patch) => {
           updateLead(lead.id, patch, actor);
           setEditOpen(false);
@@ -289,11 +290,15 @@ function WhatsappButtons({ lead, templates }) {
   );
 }
 
-function EditLeadModal({ open, onClose, lead, areas, onSave }) {
+function EditLeadModal({ open, onClose, lead, onSave }) {
   const [form, setForm] = useState({
-    firstName: '', lastName: '', phone: '', idNumber: '', area: '', jobType: ''
+    firstName: '', lastName: '', phone: '', idNumber: '', area: '', city: '', project: '', jobRole: '', jobType: ''
   });
   const [errors, setErrors] = useState({});
+  const areaOptions = getAreas();
+  const cityOptions = getCities(form.area);
+  const projectOptions = getProjects(form.area, form.city);
+  const roleOptions = getRoles(form.area, form.city, form.project);
 
   useEffect(() => {
     if (open && lead) {
@@ -303,6 +308,9 @@ function EditLeadModal({ open, onClose, lead, areas, onSave }) {
         phone: lead.phone || '',
         idNumber: lead.idNumber || '',
         area: lead.area || '',
+        city: lead.city || '',
+        project: lead.project || '',
+        jobRole: lead.jobRole || '',
         jobType: lead.jobType || ''
       });
       setErrors({});
@@ -310,7 +318,14 @@ function EditLeadModal({ open, onClose, lead, areas, onSave }) {
   }, [open, lead]);
 
   function update(k, v) {
-    setForm((f) => ({ ...f, [k]: v }));
+    setForm((f) => {
+      const next = { ...f, [k]: v };
+      if (k === 'area') return { ...next, city: '', project: '', jobRole: '', jobType: '' };
+      if (k === 'city') return { ...next, project: '', jobRole: '', jobType: '' };
+      if (k === 'project') return { ...next, jobRole: '', jobType: '' };
+      if (k === 'jobRole') return { ...next, jobType: v };
+      return next;
+    });
     if (errors[k]) setErrors((e) => ({ ...e, [k]: undefined }));
   }
 
@@ -322,7 +337,9 @@ function EditLeadModal({ open, onClose, lead, areas, onSave }) {
     if (!isValidIsraeliMobile(form.phone)) e.phone = 'מספר נייד לא תקין';
     if (!isValidIsraeliId(form.idNumber)) e.idNumber = 'ת.ז לא תקינה';
     if (!isNonEmpty(form.area)) e.area = 'יש לבחור אזור';
-    if (!form.jobType) e.jobType = 'יש לבחור סוג משרה';
+    if (!isNonEmpty(form.city)) e.city = 'יש לבחור עיר';
+    if (!isNonEmpty(form.project)) e.project = 'יש לבחור פרויקט';
+    if (!isNonEmpty(form.jobRole)) e.jobRole = 'יש לבחור משרה';
     setErrors(e);
     if (Object.keys(e).length) return;
     onSave({
@@ -358,16 +375,28 @@ function EditLeadModal({ open, onClose, lead, areas, onSave }) {
         <FieldL label="ת.ז" error={errors.idNumber}>
           <input className="input" value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} />
         </FieldL>
-        <FieldL label="אזור / אתר" error={errors.area}>
+        <FieldL label="אזור" error={errors.area}>
           <select className="input" value={form.area} onChange={(e) => update('area', e.target.value)}>
             <option value="">בחר/י</option>
-            {areas.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+            {areaOptions.map((area) => <option key={area} value={area}>{area}</option>)}
           </select>
         </FieldL>
-        <FieldL label="סוג משרה" error={errors.jobType}>
-          <select className="input" value={form.jobType} onChange={(e) => update('jobType', e.target.value)}>
+        <FieldL label="עיר" error={errors.city}>
+          <select className="input" value={form.city} onChange={(e) => update('city', e.target.value)} disabled={!form.area}>
             <option value="">בחר/י</option>
-            {JOB_TYPE_LIST.map((j) => <option key={j} value={j}>{JOB_TYPE_LABELS[j]}</option>)}
+            {cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}
+          </select>
+        </FieldL>
+        <FieldL label="פרויקט / מוקד" error={errors.project}>
+          <select className="input" value={form.project} onChange={(e) => update('project', e.target.value)} disabled={!form.city}>
+            <option value="">בחר/י</option>
+            {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
+          </select>
+        </FieldL>
+        <FieldL label="משרה" error={errors.jobRole}>
+          <select className="input" value={form.jobRole} onChange={(e) => update('jobRole', e.target.value)} disabled={!form.project}>
+            <option value="">בחר/י</option>
+            {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
           </select>
         </FieldL>
       </form>

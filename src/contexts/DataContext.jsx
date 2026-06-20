@@ -8,6 +8,7 @@ import { useAuth } from './AuthContext.jsx';
 const DataContext = createContext(null);
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
+const LANDING_PAGE_URL = 'https://israel-jobs-center2026.netlify.app/';
 
 function leadFromRow(row) {
   return {
@@ -17,6 +18,9 @@ function leadFromRow(row) {
     phone: row.phone || '',
     idNumber: row.id_number || '',
     area: row.area || '',
+    city: row.city || '',
+    project: row.project || '',
+    jobRole: row.job_role || '',
     jobType: row.job_type || '',
     status: row.status || STATUSES.NEW,
     notes: row.notes || '',
@@ -34,7 +38,10 @@ function leadToRow(payload) {
     phone: String(payload.phone || '').replace(/\D/g, ''),
     id_number: String(payload.idNumber || '').replace(/\D/g, ''),
     area: sanitizeText(payload.area).trim(),
-    job_type: payload.jobType
+    city: sanitizeText(payload.city || '').trim(),
+    project: sanitizeText(payload.project || '').trim(),
+    job_role: sanitizeText(payload.jobRole || '').trim(),
+    job_type: payload.jobType || payload.jobRole || ''
   };
 }
 
@@ -45,6 +52,9 @@ function leadPatchToRow(patch) {
   if (patch.phone !== undefined) row.phone = String(patch.phone || '').replace(/\D/g, '');
   if (patch.idNumber !== undefined) row.id_number = String(patch.idNumber || '').replace(/\D/g, '');
   if (patch.area !== undefined) row.area = sanitizeText(patch.area).trim();
+  if (patch.city !== undefined) row.city = sanitizeText(patch.city).trim();
+  if (patch.project !== undefined) row.project = sanitizeText(patch.project).trim();
+  if (patch.jobRole !== undefined) row.job_role = sanitizeText(patch.jobRole).trim();
   if (patch.jobType !== undefined) row.job_type = patch.jobType;
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.notes !== undefined) row.notes = sanitizeText(patch.notes);
@@ -72,9 +82,10 @@ function adFromRow(row) {
 }
 
 function adToRow(payload) {
+  const body = withLandingPageLink(payload.body || '');
   return {
-    title: sanitizeText(payload.title).trim(),
-    body: sanitizeText(payload.body || ''),
+    title: sanitizeText(payload.title || body.split('\n').find(Boolean) || 'פרסומת').trim(),
+    body,
     image: payload.image || '',
     notes: sanitizeText(payload.notes || '')
   };
@@ -83,12 +94,25 @@ function adToRow(payload) {
 function adPatchToRow(patch) {
   const row = { updated_at: new Date().toISOString() };
   if (patch.title !== undefined) row.title = sanitizeText(patch.title).trim();
-  if (patch.body !== undefined) row.body = sanitizeText(patch.body);
+  if (patch.body !== undefined) row.body = withLandingPageLink(patch.body);
   if (patch.image !== undefined) row.image = patch.image || '';
   if (patch.notes !== undefined) row.notes = sanitizeText(patch.notes);
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.publishedAt !== undefined) row.published_at = patch.publishedAt;
   return row;
+}
+
+function withLandingPageLink(body) {
+  const clean = sanitizeText(body || '').trim();
+  if (!clean) return LANDING_PAGE_URL;
+
+  const withoutExistingLink = clean
+    .split('\n')
+    .filter((line) => line.trim() !== LANDING_PAGE_URL)
+    .join('\n')
+    .trim();
+
+  return `${withoutExistingLink}\n\n${LANDING_PAGE_URL}`;
 }
 
 function templatesFromRows(rows) {

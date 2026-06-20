@@ -5,11 +5,11 @@ import {
   STATUSES,
   STATUS_LABELS,
   STATUS_ORDER,
-  JOB_TYPE_LABELS,
-  JOB_TYPE_LIST
+  JOB_TYPE_LABELS
 } from '../lib/statuses.js';
 import StatusBadge from '../components/StatusBadge.jsx';
 import LeadListItem from '../components/LeadListItem.jsx';
+import { getLeadJobTitle } from '../lib/jobCatalog.js';
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
 
@@ -19,6 +19,11 @@ export default function LeadsPage() {
   const [status, setStatus] = useState('all');
   const [area, setArea] = useState('all');
   const [jobType, setJobType] = useState('all');
+  const jobOptions = useMemo(
+    () => [...new Set(leads.map((lead) => getLeadJobTitle(lead) || JOB_TYPE_LABELS[lead.jobType]).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'he')),
+    [leads]
+  );
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -26,9 +31,9 @@ export default function LeadsPage() {
       .filter((l) => {
         if (status !== 'all' && l.status !== status) return false;
         if (area !== 'all' && l.area !== area) return false;
-        if (jobType !== 'all' && l.jobType !== jobType) return false;
+        if (jobType !== 'all' && getLeadJobTitle(l) !== jobType && l.jobType !== jobType) return false;
         if (needle) {
-          const hay = [l.firstName, l.lastName, l.phone, l.idNumber, l.area].join(' ').toLowerCase();
+          const hay = [l.firstName, l.lastName, l.phone, l.idNumber, l.area, l.city, l.project, getLeadJobTitle(l)].join(' ').toLowerCase();
           if (!hay.includes(needle)) return false;
         }
         return true;
@@ -80,11 +85,11 @@ export default function LeadsPage() {
             </select>
           </div>
           <div>
-            <label className="label">סוג משרה</label>
+            <label className="label">משרה</label>
             <select className="input" value={jobType} onChange={(e) => setJobType(e.target.value)}>
               <option value="all">הכול</option>
-              {JOB_TYPE_LIST.map((j) => (
-                <option key={j} value={j}>{JOB_TYPE_LABELS[j]}</option>
+              {jobOptions.map((job) => (
+                <option key={job} value={job}>{job}</option>
               ))}
             </select>
           </div>
@@ -136,8 +141,8 @@ export default function LeadsPage() {
                         </td>
                         <td className="px-4 py-3 font-mono ltr-cell">{l.phone}</td>
                         <td className="px-4 py-3 font-mono ltr-cell">{l.idNumber}</td>
-                        <td className="px-4 py-3">{l.area}</td>
-                        <td className="px-4 py-3">{JOB_TYPE_LABELS[l.jobType] || '-'}</td>
+                        <td className="px-4 py-3">{[l.area, l.city].filter(Boolean).join(' / ') || '-'}</td>
+                        <td className="px-4 py-3">{[l.project, getLeadJobTitle(l)].filter(Boolean).join(' - ') || JOB_TYPE_LABELS[l.jobType] || '-'}</td>
                         <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
                         <td className="px-4 py-3 text-slate-500 whitespace-nowrap">{fmtDate(l.createdAt)}</td>
                         <td className="px-4 py-3 text-left">

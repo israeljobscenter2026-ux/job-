@@ -6,6 +6,9 @@ dist
 .DS_Store
 *.log
 .vite
+facebook-profile/
+.publisher-cache/
+publish-log.json
 
 # Claude Code local settings (per-user permissions, etc.)
 .claude/settings.local.json

@@ -5,41 +5,10 @@ import {
   normalizePhone,
   isNonEmpty
 } from '../lib/validation.js';
-import { JOB_TYPE_LABELS, JOB_TYPE_LIST, JOB_TYPES } from '../lib/statuses.js';
-
-const JOB_META = {
-  [JOB_TYPES.BACK_OFFICE]: {
-    title: 'בק אופיס',
-    desc: 'עבודה משרדית מסודרת',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-        <rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M8 18v3M16 18v3"/>
-      </svg>
-    )
-  },
-  [JOB_TYPES.CUSTOMER_SERVICE]: {
-    title: 'שירות לקוחות',
-    desc: 'מענה טלפוני ללקוחות',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-        <path d="M3 11a9 9 0 0118 0v6a3 3 0 01-3 3h-1v-7h4M3 11v6a3 3 0 003 3h1v-7H3"/>
-      </svg>
-    )
-  },
-  [JOB_TYPES.TECH_SUPPORT]: {
-    title: 'תמיכה טכנית',
-    desc: 'פתרון בעיות טכניות',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-        <path d="M12 2a4 4 0 014 4v2h1a3 3 0 013 3v4a3 3 0 01-3 3h-1v-2h1a1 1 0 001-1v-4a1 1 0 00-1-1h-1V6a2 2 0 10-4 0v2h-1V6a4 4 0 014-4z"/>
-        <path d="M7 8h1v8H7a3 3 0 01-3-3v-2a3 3 0 013-3z"/>
-      </svg>
-    )
-  }
-};
+import { getAreas, getCities, getProjects, getRoles } from '../lib/jobCatalog.js';
 
 export default function LandingPage() {
-  const { areas, createLead } = useData();
+  const { createLead } = useData();
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -47,13 +16,27 @@ export default function LandingPage() {
     lastName: '',
     phone: '',
     area: '',
+    city: '',
+    project: '',
+    jobRole: '',
     jobType: '',
     consent: false
   });
   const [errors, setErrors] = useState({});
+  const areaOptions = getAreas();
+  const cityOptions = getCities(form.area);
+  const projectOptions = getProjects(form.area, form.city);
+  const roleOptions = getRoles(form.area, form.city, form.project);
 
   function update(field, value) {
-    setForm((f) => ({ ...f, [field]: value }));
+    setForm((f) => {
+      const next = { ...f, [field]: value };
+      if (field === 'area') return { ...next, city: '', project: '', jobRole: '', jobType: '' };
+      if (field === 'city') return { ...next, project: '', jobRole: '', jobType: '' };
+      if (field === 'project') return { ...next, jobRole: '', jobType: '' };
+      if (field === 'jobRole') return { ...next, jobType: value };
+      return next;
+    });
     if (errors[field]) setErrors((e) => ({ ...e, [field]: undefined }));
   }
 
@@ -63,7 +46,9 @@ export default function LandingPage() {
     if (!isNonEmpty(form.lastName)) e.lastName = 'יש להזין שם משפחה';
     if (!isValidIsraeliMobile(form.phone)) e.phone = 'מספר נייד ישראלי תקין (05XXXXXXXX)';
     if (!isNonEmpty(form.area)) e.area = 'יש לבחור אזור / אתר';
-    if (!form.jobType) e.jobType = 'יש לבחור סוג משרה';
+    if (!isNonEmpty(form.city)) e.city = 'יש לבחור עיר';
+    if (!isNonEmpty(form.project)) e.project = 'יש לבחור פרויקט';
+    if (!isNonEmpty(form.jobRole)) e.jobRole = 'יש לבחור משרה';
     if (!form.consent) e.consent = 'יש לאשר את ההסכמה כדי להמשיך';
     return e;
   }
@@ -151,7 +136,7 @@ export default function LandingPage() {
               <div className="relative card p-5 sm:p-7 md:p-8 backdrop-blur-sm bg-white/95">
                 {submitted ? (
                   <SuccessMessage onAgain={() => {
-                    setForm({ firstName: '', lastName: '', phone: '', area: '', jobType: '', consent: false });
+                    setForm({ firstName: '', lastName: '', phone: '', area: '', city: '', project: '', jobRole: '', jobType: '', consent: false });
                     setSubmitted(false);
                   }} />
                 ) : (
@@ -196,7 +181,7 @@ export default function LandingPage() {
                         />
                       </Field>
                       <div className="sm:col-span-2">
-                        <Field label="אזור מגורים / אתר" error={errors.area} required>
+                        <Field label="אזור" error={errors.area} required>
                           <select
                             className="input"
                             value={form.area}
@@ -204,50 +189,38 @@ export default function LandingPage() {
                             required
                           >
                             <option value="">בחר/י אזור</option>
-                            {areas.map((a) => (
-                              <option key={a.id} value={a.name}>{a.name}</option>
+                            {areaOptions.map((area) => (
+                              <option key={area} value={area}>{area}</option>
                             ))}
                           </select>
                         </Field>
                       </div>
-                    </div>
-
-                    {/* Visual job picker */}
-                    <div className="mt-4">
-                      <div className="label">
-                        סוג משרה מבוקשת <span className="text-rose-600 mr-0.5">*</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {JOB_TYPE_LIST.map((key) => {
-                          const meta = JOB_META[key];
-                          const active = form.jobType === key;
-                          return (
-                            <button
-                              key={key}
-                              type="button"
-                              onClick={() => update('jobType', key)}
-                              className={`group text-right rounded-xl border p-3 transition focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200/60 ${
-                                active
-                                  ? 'border-brand-500 bg-brand-50 shadow-glow'
-                                  : 'border-slate-200 bg-white hover:border-brand-300 hover:bg-brand-50/40'
-                              }`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <div className={`h-10 w-10 rounded-lg grid place-items-center transition ${
-                                  active ? 'bg-grad-brand text-white' : 'bg-slate-100 text-slate-600 group-hover:bg-brand-100 group-hover:text-brand-700'
-                                }`}>
-                                  {meta.icon}
-                                </div>
-                                <div className="min-w-0">
-                                  <div className={`font-semibold text-sm ${active ? 'text-brand-800' : 'text-slate-900'}`}>{meta.title}</div>
-                                  <div className="text-xs text-slate-500 truncate">{meta.desc}</div>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {errors.jobType && <p className="mt-1 text-xs text-rose-600">{errors.jobType}</p>}
+                      {form.area && (
+                        <Field label="עיר" error={errors.city} required>
+                          <select className="input" value={form.city} onChange={(e) => update('city', e.target.value)} required>
+                            <option value="">בחר/י עיר</option>
+                            {cityOptions.map((city) => <option key={city} value={city}>{city}</option>)}
+                          </select>
+                        </Field>
+                      )}
+                      {form.city && (
+                        <Field label="פרויקט / מוקד" error={errors.project} required>
+                          <select className="input" value={form.project} onChange={(e) => update('project', e.target.value)} required>
+                            <option value="">בחר/י פרויקט</option>
+                            {projectOptions.map((project) => <option key={project} value={project}>{project}</option>)}
+                          </select>
+                        </Field>
+                      )}
+                      {form.project && (
+                        <div className="sm:col-span-2">
+                          <Field label="משרה" error={errors.jobRole} required>
+                            <select className="input" value={form.jobRole} onChange={(e) => update('jobRole', e.target.value)} required>
+                              <option value="">בחר/י משרה</option>
+                              {roleOptions.map((role) => <option key={role} value={role}>{role}</option>)}
+                            </select>
+                          </Field>
+                        </div>
+                      )}
                     </div>
 
                     {/* Consent */}

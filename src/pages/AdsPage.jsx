@@ -170,9 +170,8 @@ function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
         </span>
       </div>
       <div className="p-4 flex-1 flex flex-col">
-        <div className="font-semibold text-slate-900 truncate">{ad.title || 'ללא כותרת'}</div>
         {ad.body && (
-          <p className="mt-1 text-sm text-slate-600 line-clamp-3 whitespace-pre-wrap">{ad.body}</p>
+          <p className="text-sm text-slate-600 line-clamp-4 whitespace-pre-wrap">{ad.body}</p>
         )}
         <div className="mt-3 text-xs text-slate-500 space-y-1">
           <div>נוצר: {fmt(ad.createdAt)}</div>
@@ -203,7 +202,6 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
   const [form, setForm] = useState({ title: '', body: '', image: '', notes: '' });
   const [imgError, setImgError] = useState(null);
   const [imgBusy, setImgBusy] = useState(false);
-  const [titleError, setTitleError] = useState(null);
 
   useEffect(() => {
     if (!open) return;
@@ -214,12 +212,10 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
       notes: ad?.notes || ''
     });
     setImgError(null);
-    setTitleError(null);
   }, [open, ad?.id]);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
-    if (field === 'title' && titleError) setTitleError(null);
   }
 
   async function onPickFile(ev) {
@@ -240,12 +236,12 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
 
   function submit(ev) {
     ev?.preventDefault?.();
-    if (!form.title.trim()) {
-      setTitleError('יש להזין כותרת לפרסומת');
-      return;
-    }
-    if (isEdit) onUpdate(form);
-    else onCreate(form);
+    const payload = {
+      ...form,
+      title: form.title || 'פרסומת'
+    };
+    if (isEdit) onUpdate(payload);
+    else onCreate(payload);
   }
 
   const sizeKB = approxDataUrlKB(form.image);
@@ -296,25 +292,16 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
         </div>
 
         <label className="block">
-          <span className="label">כותרת <span className="text-rose-600">*</span></span>
-          <input
-            className="input"
-            value={form.title}
-            onChange={(e) => update('title', e.target.value)}
-            maxLength={200}
-            placeholder="לדוגמה: דרושים נציגי שירות לקוחות באזור חיפה"
-          />
-          {titleError && <span className="mt-1 block text-xs text-rose-600">{titleError}</span>}
-        </label>
-
-        <label className="block">
           <span className="label">טקסט המודעה</span>
           <textarea
             className="input min-h-[140px]"
             value={form.body}
             onChange={(e) => update('body', e.target.value)}
-            placeholder="גוף הטקסט שיופיע בפרסומת"
+            placeholder="גוף הטקסט שיופיע בפרסומת. קישור דף הנחיתה יתווסף אוטומטית מתחת לטקסט."
           />
+          <span className="mt-1 block text-xs text-slate-500">
+            הקישור לדף הנחיתה יתווסף אוטומטית מתחת לטקסט לאחר השמירה.
+          </span>
         </label>
 
         <label className="block">
@@ -361,4 +348,3 @@ function PublishDialog({ ad, onClose, onConfirm }) {
     </Modal>
   );
 }
-
