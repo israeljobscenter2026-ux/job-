@@ -36,6 +36,9 @@ export default function PublishAdPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [preview, setPreview] = useState(null);
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [publishResult, setPublishResult] = useState(null);
 
   const sortedAds = useMemo(
     () => [...ads].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
@@ -51,6 +54,8 @@ export default function PublishAdPage() {
     setBusy(true);
     setError('');
     setPreview(null);
+    setPublishError('');
+    setPublishResult(null);
 
     try {
       const response = await fetch('http://127.0.0.1:4546/publish-facebook-ad', {
@@ -72,6 +77,36 @@ export default function PublishAdPage() {
         : err.message || 'לא הצלחנו לבדוק קבוצות לפרסום.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function startPublish() {
+    if (!adId || !preview) return;
+
+    setPublishBusy(true);
+    setPublishError('');
+    setPublishResult(null);
+
+    try {
+      const response = await fetch('http://127.0.0.1:4546/start-facebook-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adId, region, lap, dev })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'לא הצלחנו להתחיל את הפרסום.');
+      }
+
+      setPublishResult(payload);
+    } catch (err) {
+      const isConnectionError = err instanceof TypeError;
+      setPublishError(isConnectionError
+        ? 'כדי להפעיל פרסום יש להריץ קודם: npm run publish:server'
+        : err.message || 'לא הצלחנו להתחיל את הפרסום.');
+    } finally {
+      setPublishBusy(false);
     }
   }
 
@@ -140,6 +175,27 @@ export default function PublishAdPage() {
             {error}
           </div>
         )}
+
+        {publishError && (
+          <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800">
+            {publishError}
+          </div>
+        )}
+
+        {publishBusy && (
+          <div className="mt-4 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-800">
+            הפרסום רץ. אשר ידנית כל פוסט בחלון פייסבוק.
+          </div>
+        )}
+
+        {publishResult && (
+          <div className="mt-4 grid gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900">
+            <div className="font-bold">{publishResult.message || 'הפרסום הסתיים.'}</div>
+            <div>הוכנו {publishResult.prepared || 0} פוסטים</div>
+            <div>דולגו {publishResult.skipped || 0} קבוצות</div>
+            <div>נכשלו {publishResult.failed || 0} קבוצות</div>
+          </div>
+        )}
       </section>
 
       {preview && (
@@ -149,9 +205,21 @@ export default function PublishAdPage() {
               <h2 className="font-bold">קבוצות שנבחרו</h2>
               <p className="text-sm text-slate-500">{preview.adTitle}</p>
             </div>
-            <span className="badge bg-brand-100 text-brand-700 border border-brand-200">
-              {preview.totalGroups} קבוצות
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="badge bg-brand-100 text-brand-700 border border-brand-200">
+                {preview.totalGroups} קבוצות
+              </span>
+              {preview.groups.length > 0 && (
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={startPublish}
+                  disabled={publishBusy}
+                >
+                  {publishBusy ? 'מריץ פרסום...' : 'התחל פרסום'}
+                </button>
+              )}
+            </div>
           </div>
 
           {preview.groups.length === 0 ? (
