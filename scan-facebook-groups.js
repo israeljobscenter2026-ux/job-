@@ -17,11 +17,6 @@ const rl = readline.createInterface({ input, output });
 
 try {
   const env = await readLocalEnv();
-  const supabase = await createAuthenticatedSupabase(env);
-  const existingUrls = await loadExistingGroupUrls(supabase);
-  for (const group of await readJson(GROUPS_FILE, [])) {
-    existingUrls.add(normalizeUrl(group.url));
-  }
   const scannedGroups = await scanFacebookGroups();
   const normalizedGroups = uniqueGroups(scannedGroups).map((group) => ({
     name: group.name,
@@ -36,6 +31,12 @@ try {
 
   await fs.writeFile(OUTPUT_JSON, `${JSON.stringify(normalizedGroups, null, 2)}\n`, 'utf8');
 
+  const supabase = await createAuthenticatedSupabase(env);
+  const existingUrls = await loadExistingGroupUrls(supabase);
+  for (const group of await readJson(GROUPS_FILE, [])) {
+    existingUrls.add(normalizeUrl(group.url));
+  }
+
   const newGroups = normalizedGroups.filter((group) => !existingUrls.has(normalizeUrl(group.url)));
   if (normalizedGroups.length > 0) {
     const { error } = await supabase
@@ -46,12 +47,12 @@ try {
 
   console.log('');
   console.log('========================================');
-  console.log(`נסרקו קבוצות: ${normalizedGroups.length}`);
-  console.log(`קבוצות חדשות שנוספו למערכת ולבוט: ${newGroups.length}`);
-  console.log(`קובץ גיבוי נוצר: ${OUTPUT_JSON}`);
+  console.log(`Scanned groups: ${normalizedGroups.length}`);
+  console.log(`New groups added to the system and bot: ${newGroups.length}`);
+  console.log(`Backup file created: ${OUTPUT_JSON}`);
   console.log('========================================');
 } catch (error) {
-  console.error(`שגיאה בסריקה: ${error.message}`);
+  console.error(`Scan error: ${error.message}`);
   process.exitCode = 1;
 } finally {
   rl.close();
@@ -67,8 +68,8 @@ async function scanFacebookGroups() {
   try {
     const page = context.pages()[0] || await context.newPage();
     await page.goto('https://www.facebook.com/groups/joins/', { waitUntil: 'domcontentloaded', timeout: 60000 });
-    console.log('נפתח עמוד הקבוצות בפייסבוק.');
-    console.log('אם צריך להתחבר או לאשר משהו בפייסבוק, בצע זאת בדפדפן ואז לחץ Enter כאן.');
+    console.log('Facebook groups page opened.');
+    console.log('If Facebook asks you to login or confirm something, do it in the browser, then press Enter here.');
     await rl.question('');
 
     const groups = new Map();
@@ -94,7 +95,7 @@ async function scanFacebookGroups() {
         groups.set(normalizeUrl(item.url), { name, url: normalizeUrl(item.url) });
       }
 
-      console.log(`נמצאו עד עכשיו: ${groups.size}`);
+      console.log(`Found so far: ${groups.size}`);
     }
 
     return [...groups.values()];
@@ -107,17 +108,18 @@ async function createAuthenticatedSupabase(env) {
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
   const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
   if (!supabaseUrl || !supabaseAnonKey) {
-    throw new Error('חסרים VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY בקובץ .env');
+    throw new Error('Missing VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in .env');
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     auth: { persistSession: false, autoRefreshToken: false }
   });
 
-  const email = env.SUPABASE_LOGIN_EMAIL || await rl.question('אימייל כניסה למערכת: ');
-  const password = env.SUPABASE_LOGIN_PASSWORD || await rl.question('סיסמה למערכת: ');
+  console.log('Facebook scan finished. Now login to the system so new groups can be saved.');
+  const email = env.SUPABASE_LOGIN_EMAIL || await rl.question('System email: ');
+  const password = env.SUPABASE_LOGIN_PASSWORD || await rl.question('System password: ');
   const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error(`התחברות למערכת נכשלה: ${error.message}`);
+  if (error) throw new Error(`System login failed: ${error.message}`);
   return supabase;
 }
 

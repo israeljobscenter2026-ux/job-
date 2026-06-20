@@ -51,7 +51,7 @@ export default function PublisherGroupsPage() {
   }
 
   async function copyScanCommand() {
-    await copyText('npm run scan:groups');
+    await copyText('node export-facebook-groups.js');
     setScanCopied(true);
     window.setTimeout(() => setScanCopied(false), 1800);
   }
@@ -75,7 +75,7 @@ export default function PublisherGroupsPage() {
             <p className="text-sm text-slate-500">הפעל במחשב את הפקודה, אשר כניסה לפייסבוק אם צריך, והקבוצות החדשות יתווספו למערכת ולבוט.</p>
           </div>
           <code dir="ltr" className="rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white">
-            npm run scan:groups
+            node export-facebook-groups.js
           </code>
         </div>
       </section>
