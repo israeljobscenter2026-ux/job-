@@ -177,8 +177,8 @@ function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
           <div>נוצר: {fmt(ad.createdAt)}</div>
           {ad.publishedAt && <div>פורסם: {fmt(ad.publishedAt)}</div>}
           {ad.notes && (
-            <div className="mt-2 rounded-md bg-amber-50 border border-amber-100 px-2 py-1.5 text-amber-900 line-clamp-2">
-              <span className="font-medium">הערה: </span>{ad.notes}
+            <div className="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-center text-sm font-bold text-amber-900 line-clamp-3">
+              <span>הערה: </span>{ad.notes}
             </div>
           )}
         </div>

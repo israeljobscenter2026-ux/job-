@@ -7,8 +7,35 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 const TIME_ROUNDS = new Set(['morning', 'noon', 'evening']);
-const LAP_ROUNDS = new Set(['lap1', 'lap2', 'lap3', 'lap4']);
-const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS]);
+const REGION_ROUNDS = new Set(['north', 'center', 'jerusalem', 'sharon', 'south']);
+const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...REGION_ROUNDS]);
+const REGION_LABELS = {
+  north: 'צפון',
+  center: 'מרכז',
+  jerusalem: 'ירושלים והסביבה',
+  sharon: 'השרון',
+  south: 'דרום'
+};
+const REGION_ALIASES = {
+  north: 'north',
+  zafon: 'north',
+  'צפון': 'north',
+  center: 'center',
+  merkaz: 'center',
+  'מרכז': 'center',
+  jerusalem: 'jerusalem',
+  jerusalemarea: 'jerusalem',
+  yerushalayim: 'jerusalem',
+  'ירושלים': 'jerusalem',
+  'ירושליםוהסביבה': 'jerusalem',
+  sharon: 'sharon',
+  hasharon: 'sharon',
+  'שרון': 'sharon',
+  'השרון': 'sharon',
+  south: 'south',
+  darom: 'south',
+  'דרום': 'south'
+};
 const ROOT_DIR = process.cwd();
 const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const POSTS_FILE = path.join(ROOT_DIR, 'posts.json');
@@ -22,8 +49,8 @@ const round = normalizeRoundArg(args.filter((arg) => !arg.startsWith('-')));
 const isDevMode = args.includes('--dev') || process.env.PUBLISHER_DEV === '1' || process.env.DEV_DELAY === '1';
 
 if (!VALID_ROUNDS.has(round)) {
-  console.error('Usage: node publisher.js morning|noon|evening|lap1|lap2|lap3|lap4 [--dev]');
-  console.error('Example: node publisher.js lap1 --dev');
+  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south [--dev]');
+  console.error('Example: node publisher.js north --dev');
   process.exit(1);
 }
 
@@ -39,8 +66,8 @@ try {
   }
 
   const postRound = getPostRound(round);
-  const lapPlan = getLapPlan(allGroups, round);
-  const groups = lapPlan.groups;
+  const roundPlan = getRoundPlan(allGroups, round);
+  const groups = roundPlan.groups;
 
   if (!activeAd && !posts[postRound]) {
     throw new Error(`לא נמצאו טקסטים עבור הסבב "${postRound}" בקובץ posts.json.`);
@@ -55,8 +82,8 @@ try {
   const page = context.pages()[0] || await context.newPage();
 
   console.log(`\nמתחיל סבב ${round}${isDevMode ? ' במצב פיתוח' : ''}.`);
-  if (lapPlan.isLap) {
-    console.log(`חלוקת ${round}: קבוצות באינדקס ${lapPlan.startIndex + 1}-${lapPlan.endIndex} מתוך ${allGroups.length}.`);
+  if (roundPlan.isRegion) {
+    console.log(`אזור: ${roundPlan.label}. קבוצות באזור הזה: ${groups.length} מתוך ${allGroups.length}.`);
   }
   console.log(`מספר קבוצות להרצה הזו: ${groups.length}.`);
   if (activeAd) {
@@ -510,39 +537,103 @@ function normalizeRoundArg(positionArgs) {
   if (!first) return '';
 
   const cleanFirst = first.toLowerCase().replace(/\s+/g, '');
-  if (cleanFirst === 'lap' && second) return `lap${String(second).replace(/\D/g, '')}`;
-  return cleanFirst;
+  if (cleanFirst === 'lap' && second) return '';
+  return REGION_ALIASES[cleanFirst] || cleanFirst;
 }
 
 function getPostRound(activeRound) {
-  // ה-laps מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
-  return LAP_ROUNDS.has(activeRound) ? 'morning' : activeRound;
+  // סבבי האזורים מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
+  return REGION_ROUNDS.has(activeRound) ? 'morning' : activeRound;
 }
 
-function getLapPlan(allGroups, activeRound) {
-  if (!LAP_ROUNDS.has(activeRound)) {
+function getRoundPlan(allGroups, activeRound) {
+  if (!REGION_ROUNDS.has(activeRound)) {
     return {
       groups: allGroups,
-      isLap: false,
+      isRegion: false,
+      label: activeRound,
       startIndex: 0,
       endIndex: allGroups.length
     };
   }
 
-  const lapIndex = Number(activeRound.replace('lap', '')) - 1;
-  const lapCount = LAP_ROUNDS.size;
-  const baseSize = Math.floor(allGroups.length / lapCount);
-  const remainder = allGroups.length % lapCount;
-  const startIndex = lapIndex * baseSize + Math.min(lapIndex, remainder);
-  const size = baseSize + (lapIndex < remainder ? 1 : 0);
-  const endIndex = startIndex + size;
-
   return {
-    groups: allGroups.slice(startIndex, endIndex),
-    isLap: true,
-    startIndex,
-    endIndex
+    groups: allGroups.filter((group) => detectGroupRegion(group) === activeRound),
+    isRegion: true,
+    label: REGION_LABELS[activeRound] || activeRound,
+    startIndex: 0,
+    endIndex: allGroups.length
   };
+}
+
+function detectGroupRegion(group) {
+  const name = normalizeHebrewText(group?.name || '');
+
+  // קבוצות כלליות או קבוצות שמציינות כמה אזורים יחד נשארות בסבב מרכז.
+  if (
+    hasAny(name, ['בכל הארץ', 'כל הארץ', 'כל רחבי הארץ', 'כלל ארצי']) ||
+    (hasAny(name, ['מרכז']) && hasAny(name, ['צפון', 'דרום', 'ירושלים']))
+  ) {
+    return 'center';
+  }
+
+  // קודם ערים ואזורים ספציפיים, כדי לא להתבלבל בין "צפון תל אביב" לבין אזור הצפון.
+  if (hasAny(name, ['ירושלים'])) return 'jerusalem';
+
+  if (hasAny(name, [
+    'עמק חפר',
+    'השרון',
+    'שרון',
+    'חדרה',
+    'נתניה',
+    'רעננה',
+    'הרצליה'
+  ])) {
+    return 'sharon';
+  }
+
+  if (hasAny(name, [
+    'חיפה',
+    'קריות',
+    'הקריות',
+    'נשר',
+    'עכו',
+    'צפון'
+  ]) && !hasAny(name, ['תל אביב', 'ת א', 'תא'])) {
+    return 'north';
+  }
+
+  if (hasAny(name, [
+    'שדרות',
+    'אשדוד',
+    'קריית גת',
+    'באר שבע',
+    'באר שבע',
+    'נתיבות',
+    'דימונה',
+    'רהט',
+    'גדרה',
+    'יבנה',
+    'רחובות',
+    'דרום'
+  ])) {
+    return 'south';
+  }
+
+  return 'center';
+}
+
+function normalizeHebrewText(value) {
+  return String(value)
+    .replace(/[״"]/g, '')
+    .replace(/[׳']/g, '')
+    .replace(/[-_/\\|,().:;!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasAny(value, needles) {
+  return needles.some((needle) => value.includes(needle));
 }
 
 function selectPostText(posts, activeRound, language) {
