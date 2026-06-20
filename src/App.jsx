@@ -7,6 +7,7 @@ import LeadDetailsPage from './pages/LeadDetailsPage.jsx';
 import RemindersPage from './pages/RemindersPage.jsx';
 import AreasPage from './pages/AreasPage.jsx';
 import AdsPage from './pages/AdsPage.jsx';
+import PublishAdPage from './pages/PublishAdPage.jsx';
 import PublisherGroupsPage from './pages/PublisherGroupsPage.jsx';
 import TemplatesPage from './pages/TemplatesPage.jsx';
 import AccountPage from './pages/AccountPage.jsx';
@@ -36,6 +37,7 @@ export default function App() {
           <Route path="/admin/reminders" element={<RemindersPage />} />
           <Route path="/admin/areas" element={<AreasPage />} />
           <Route path="/admin/ads" element={<AdsPage />} />
+          <Route path="/admin/publish-ad" element={<PublishAdPage />} />
           <Route path="/admin/publisher-groups" element={<PublisherGroupsPage />} />
           <Route path="/admin/templates" element={<TemplatesPage />} />
           <Route path="/admin/account" element={<AccountPage />} />
