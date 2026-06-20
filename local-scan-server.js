@@ -13,15 +13,16 @@ let activeScan = null;
 
 const server = http.createServer(async (req, res) => {
   const origin = req.headers.origin || '';
+  const pathname = getRequestPathname(req);
   writeCorsHeaders(req, res);
 
-  if (req.method === 'OPTIONS') {
+  if (req.method === 'OPTIONS' && pathname === '/scan-facebook-groups') {
     res.writeHead(isAllowedOrigin(origin) ? 204 : 403);
     res.end();
     return;
   }
 
-  if (req.method !== 'POST' || req.url !== '/scan-facebook-groups') {
+  if (req.method !== 'POST' || pathname !== '/scan-facebook-groups') {
     sendJson(res, 404, { error: 'Not found' });
     return;
   }
@@ -72,6 +73,14 @@ function writeCorsHeaders(req, res) {
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   return ALLOWED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
+
+function getRequestPathname(req) {
+  try {
+    return new URL(req.url, `http://${HOST}:${PORT}`).pathname;
+  } catch {
+    return '';
+  }
 }
 
 function sendJson(res, statusCode, payload) {
