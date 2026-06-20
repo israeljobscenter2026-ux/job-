@@ -8,6 +8,7 @@ const navItems = [
   { to: '/admin/leads', label: 'פונים', icon: 'users' },
   { to: '/admin/reminders', label: 'תזכורות', icon: 'bell' },
   { to: '/admin/ads', label: 'ניהול פרסומות', icon: 'megaphone' },
+  { to: '/admin/publisher-groups', label: 'ניהול קבוצות', icon: 'list' },
   { to: '/admin/areas', label: 'אזורים / אתרים', icon: 'map' },
   { to: '/admin/templates', label: 'תבניות וואטסאפ', icon: 'chat' },
   { to: '/admin/account', label: 'החשבון שלי', icon: 'user' }
@@ -22,6 +23,7 @@ function Icon({ name }) {
     case 'map': return <svg {...common}><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg>;
     case 'chat': return <svg {...common}><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>;
     case 'megaphone': return <svg {...common}><path d="M3 11v2a1 1 0 001 1h2l4 4V6L6 10H4a1 1 0 00-1 1z"/><path d="M15 5v14a4 4 0 000-14z"/><path d="M18 8l3-2M18 16l3 2M18 12h4"/></svg>;
+    case 'list': return <svg {...common}><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>;
     case 'user': return <svg {...common}><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
     default: return null;
   }

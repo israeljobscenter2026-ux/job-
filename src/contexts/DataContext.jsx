@@ -4,11 +4,25 @@ import { DEFAULT_TEMPLATES } from '../lib/whatsapp.js';
 import { sanitizeText } from '../lib/validation.js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase.js';
 import { useAuth } from './AuthContext.jsx';
+import initialPublisherGroups from '../../groups.json';
 
 const DataContext = createContext(null);
 
 const TWO_MONTHS_MS = 1000 * 60 * 60 * 24 * 60;
 const LANDING_PAGE_URL = 'https://israel-jobs-center2026.netlify.app/';
+const DEFAULT_GROUP_IMAGE_PATH = 'C:/Users/emil1/Documents/מערכת למשרות/assets/ChatGPT_Image_Jun_18_2026_10_19_30_PM.png';
+
+const STATIC_PUBLISHER_GROUPS = initialPublisherGroups.map((group, index) => ({
+  id: `static-${index + 1}`,
+  name: group.name || '',
+  url: group.url || '',
+  language: group.language || 'he',
+  imagePath: group.imagePath || DEFAULT_GROUP_IMAGE_PATH,
+  link: group.link || LANDING_PAGE_URL,
+  region: group.region || detectPublisherGroupRegion(group),
+  source: 'static',
+  createdAt: null
+}));
 
 function leadFromRow(row) {
   return {
@@ -102,6 +116,32 @@ function adPatchToRow(patch) {
   return row;
 }
 
+function publisherGroupFromRow(row) {
+  return {
+    id: row.id,
+    name: row.name || '',
+    url: row.url || '',
+    language: row.language || 'he',
+    imagePath: row.image_path || DEFAULT_GROUP_IMAGE_PATH,
+    link: row.link || LANDING_PAGE_URL,
+    region: row.region || detectPublisherGroupRegion(row),
+    source: 'database',
+    createdAt: row.created_at
+  };
+}
+
+function publisherGroupToRow(payload) {
+  return {
+    name: sanitizeText(payload.name || '').trim(),
+    url: sanitizeText(payload.url || '').trim(),
+    language: payload.language || 'he',
+    image_path: payload.imagePath || DEFAULT_GROUP_IMAGE_PATH,
+    link: payload.link || LANDING_PAGE_URL,
+    region: payload.region || detectPublisherGroupRegion(payload),
+    active: true
+  };
+}
+
 function withLandingPageLink(body) {
   const clean = sanitizeText(body || '').trim();
   if (!clean) return LANDING_PAGE_URL;
@@ -123,12 +163,58 @@ function templatesFromRows(rows) {
   return next;
 }
 
+function mergePublisherGroups(databaseGroups) {
+  const byUrl = new Map();
+  for (const group of STATIC_PUBLISHER_GROUPS) byUrl.set(normalizeUrl(group.url), group);
+  for (const group of databaseGroups) byUrl.set(normalizeUrl(group.url), group);
+  return [...byUrl.values()].sort((a, b) =>
+    (a.region || '').localeCompare(b.region || '', 'he') || a.name.localeCompare(b.name, 'he')
+  );
+}
+
+function normalizeUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '').toLowerCase();
+}
+
+function detectPublisherGroupRegion(group) {
+  if (['north', 'center', 'jerusalem', 'sharon', 'south', 'allcountry'].includes(group?.region)) return group.region;
+  const name = normalizeHebrewText(group?.name || '');
+  if (isAllCountryPublisherGroup(group)) return 'allcountry';
+  if (hasAny(name, ['ירושלים'])) return 'jerusalem';
+  if (hasAny(name, ['עמק חפר', 'השרון', 'שרון', 'חדרה', 'נתניה', 'רעננה', 'הרצליה'])) return 'sharon';
+  if (hasAny(name, ['חיפה', 'קריות', 'הקריות', 'נשר', 'עכו', 'צפון']) && !hasAny(name, ['תל אביב', 'ת א', 'תא'])) return 'north';
+  if (hasAny(name, ['שדרות', 'אשדוד', 'קריית גת', 'באר שבע', 'נתיבות', 'דימונה', 'רהט', 'גדרה', 'יבנה', 'רחובות', 'דרום'])) return 'south';
+  return 'center';
+}
+
+function isAllCountryPublisherGroup(group) {
+  if (group?.region === 'allcountry') return true;
+  const name = normalizeHebrewText(group?.name || '');
+  const explicitAllCountry = hasAny(name, ['בכל הארץ', 'כל הארץ', 'כל רחבי הארץ', 'כלל ארצי']);
+  const multiRegion = hasAny(name, ['מרכז']) && hasAny(name, ['צפון', 'דרום', 'ירושלים']);
+  return explicitAllCountry || multiRegion;
+}
+
+function normalizeHebrewText(value) {
+  return String(value)
+    .replace(/[״"]/g, '')
+    .replace(/[׳']/g, '')
+    .replace(/[-_/\\|,().:;!?]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function hasAny(value, needles) {
+  return needles.some((needle) => value.includes(needle));
+}
+
 export function DataProvider({ children }) {
   const { user, ready: authReady } = useAuth();
   const [leads, setLeadsState] = useState([]);
   const [areas, setAreasState] = useState([]);
   const [templates, setTemplatesState] = useState(DEFAULT_TEMPLATES);
   const [ads, setAdsState] = useState([]);
+  const [publisherGroups, setPublisherGroupsState] = useState(STATIC_PUBLISHER_GROUPS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -152,23 +238,26 @@ export function DataProvider({ children }) {
       setLeadsState([]);
       setTemplatesState(DEFAULT_TEMPLATES);
       setAdsState([]);
+      setPublisherGroupsState(STATIC_PUBLISHER_GROUPS);
       setLoading(false);
       return;
     }
 
-    const [leadsResult, templatesResult, adsResult] = await Promise.all([
+    const [leadsResult, templatesResult, adsResult, publisherGroupsResult] = await Promise.all([
       supabase.from('leads').select('*').order('created_at', { ascending: false }),
       supabase.from('templates').select('*'),
-      supabase.from('ads').select('*').order('created_at', { ascending: false })
+      supabase.from('ads').select('*').order('created_at', { ascending: false }),
+      supabase.from('publisher_groups').select('*').eq('active', true).order('created_at', { ascending: false })
     ]);
 
-    if (leadsResult.error || templatesResult.error || adsResult.error) {
-      setError(leadsResult.error?.message || templatesResult.error?.message || adsResult.error?.message);
+    if (leadsResult.error || templatesResult.error || adsResult.error || publisherGroupsResult.error) {
+      setError(leadsResult.error?.message || templatesResult.error?.message || adsResult.error?.message || publisherGroupsResult.error?.message);
     }
 
     setLeadsState((leadsResult.data || []).map(leadFromRow));
     setTemplatesState(templatesFromRows(templatesResult.data || []));
     setAdsState((adsResult.data || []).map(adFromRow));
+    setPublisherGroupsState(mergePublisherGroups((publisherGroupsResult.data || []).map(publisherGroupFromRow)));
     setLoading(false);
   }, [authReady, user]);
 
@@ -293,6 +382,31 @@ export function DataProvider({ children }) {
     setAdsState((list) => list.filter((ad) => ad.id !== id));
   }, []);
 
+  const addPublisherGroup = useCallback(async (payload) => {
+    const row = publisherGroupToRow(payload);
+    if (!row.name || !row.url) return;
+    const { data, error: insertError } = await supabase
+      .from('publisher_groups')
+      .upsert(row, { onConflict: 'url' })
+      .select()
+      .single();
+    if (insertError) throw insertError;
+    setPublisherGroupsState((list) => mergePublisherGroups([
+      ...list.filter((group) => group.source === 'database').map((group) => ({
+        id: group.id,
+        name: group.name,
+        url: group.url,
+        language: group.language,
+        image_path: group.imagePath,
+        link: group.link,
+        region: group.region,
+        created_at: group.createdAt
+      })).map(publisherGroupFromRow),
+      publisherGroupFromRow(data)
+    ]));
+    await refreshData();
+  }, [refreshData]);
+
   const updateTemplate = useCallback(async (key, patch) => {
     const current = templates[key] || DEFAULT_TEMPLATES[key];
     const next = { ...current, ...patch };
@@ -327,19 +441,21 @@ export function DataProvider({ children }) {
   }, [leads, remindersDue]);
 
   const value = useMemo(() => ({
-    leads, areas, templates, ads,
+    leads, areas, templates, ads, publisherGroups,
     loading, error, refreshData,
     createLead, updateLead, deleteLead,
     addArea, updateArea, deleteArea,
     updateTemplate,
     createAd, updateAd, publishAd, unpublishAd, deleteAd,
+    addPublisherGroup,
     remindersDue, stats
   }), [
-    leads, areas, templates, ads, loading, error, refreshData,
+    leads, areas, templates, ads, publisherGroups, loading, error, refreshData,
     createLead, updateLead, deleteLead,
     addArea, updateArea, deleteArea,
     updateTemplate,
     createAd, updateAd, publishAd, unpublishAd, deleteAd,
+    addPublisherGroup,
     remindersDue, stats
   ]);
 

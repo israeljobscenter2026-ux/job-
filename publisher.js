@@ -74,7 +74,8 @@ if (!VALID_ROUNDS.has(round)) {
 const rl = readline.createInterface({ input, output });
 
 try {
-  const allGroups = await readJson(GROUPS_FILE, []);
+  const fallbackGroups = await readJson(GROUPS_FILE, []);
+  const allGroups = await loadPublisherGroups(fallbackGroups);
   const posts = await readJson(POSTS_FILE, {});
   const activeAd = await loadActiveAd();
 
@@ -463,6 +464,44 @@ async function readJson(filePath, fallback) {
   }
 }
 
+async function loadPublisherGroups(fallbackGroups) {
+  const env = await readLocalEnv();
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
+  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return fallbackGroups;
+  }
+
+  const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+
+  const { data, error } = await supabase
+    .from('publisher_groups')
+    .select('name,url,language,image_path,link,region,active')
+    .eq('active', true);
+
+  if (error) {
+    console.log(`לא הצלחתי למשוך קבוצות מהמערכת, משתמש בקובץ groups.json: ${error.message}`);
+    return fallbackGroups;
+  }
+
+  const databaseGroups = (data || []).map((row) => ({
+    name: row.name,
+    url: row.url,
+    language: row.language || 'he',
+    imagePath: row.image_path || '',
+    link: row.link || 'https://israel-jobs-center2026.netlify.app/',
+    region: row.region || ''
+  }));
+
+  const byUrl = new Map();
+  for (const group of fallbackGroups) byUrl.set(normalizeUrl(group.url), group);
+  for (const group of databaseGroups) byUrl.set(normalizeUrl(group.url), group);
+  return [...byUrl.values()];
+}
+
 async function loadActiveAd() {
   const env = await readLocalEnv();
   const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL;
@@ -497,6 +536,10 @@ async function loadActiveAd() {
     imagePath: data.image ? await saveActiveAdImage(data.image) : '',
     publishedAt: data.published_at
   };
+}
+
+function normalizeUrl(url) {
+  return String(url || '').trim().replace(/\/+$/, '').toLowerCase();
 }
 
 async function readLocalEnv() {
@@ -630,6 +673,7 @@ function getAllCountryChunk(groups, activeRound) {
 }
 
 function isAllCountryGroup(group) {
+  if (group?.region === 'allcountry') return true;
   const name = normalizeHebrewText(group?.name || '');
   const explicitAllCountry = hasAny(name, [
     '\u05d1\u05db\u05dc \u05d4\u05d0\u05e8\u05e5',
@@ -644,6 +688,7 @@ function isAllCountryGroup(group) {
 }
 
 function detectGroupRegion(group) {
+  if (REGION_ROUNDS.has(group?.region)) return group.region;
   const name = normalizeHebrewText(group?.name || '');
 
   // קבוצות כלליות או קבוצות שמציינות כמה אזורים יחד נשארות בסבב מרכז.

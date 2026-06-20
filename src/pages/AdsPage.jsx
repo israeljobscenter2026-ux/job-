@@ -2,17 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../contexts/DataContext.jsx';
 import Modal from '../components/Modal.jsx';
 import { fileToResizedDataUrl, approxDataUrlKB } from '../lib/image.js';
-import publisherGroups from '../../groups.json';
 
 const STATUS_LABEL = { draft: 'טיוטה', published: 'פורסם' };
 const STATUS_COLOR = {
   draft: 'bg-amber-100 text-amber-800 border border-amber-200',
   published: 'bg-emerald-100 text-emerald-800 border border-emerald-200'
 };
-const PUBLISHER_COMMANDS = buildPublisherCommands(publisherGroups);
 
 export default function AdsPage() {
-  const { ads, createAd, updateAd, publishAd, unpublishAd, deleteAd } = useData();
+  const { ads, publisherGroups, createAd, updateAd, publishAd, unpublishAd, deleteAd } = useData();
   const [filter, setFilter] = useState('all');
   const [copiedCommand, setCopiedCommand] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -32,6 +30,7 @@ export default function AdsPage() {
     draft: ads.filter((a) => a.status === 'draft').length,
     published: ads.filter((a) => a.status === 'published').length
   }), [ads]);
+  const publisherCommands = useMemo(() => buildPublisherCommands(publisherGroups), [publisherGroups]);
 
   function openCreate() {
     setEditingId(null);
@@ -76,7 +75,7 @@ export default function AdsPage() {
       </header>
 
       <PublisherCommandsPanel
-        commands={PUBLISHER_COMMANDS}
+        commands={publisherCommands}
         copiedCommand={copiedCommand}
         onCopy={copyCommand}
       />
@@ -447,6 +446,7 @@ function getLapCounts(groups, lapCount) {
 }
 
 function isAllCountryGroup(group) {
+  if (group?.region === 'allcountry') return true;
   const name = normalizeHebrewText(group?.name || '');
   const explicitAllCountry = hasAny(name, ['בכל הארץ', 'כל הארץ', 'כל רחבי הארץ', 'כלל ארצי']);
   const multiRegion = hasAny(name, ['מרכז']) && hasAny(name, ['צפון', 'דרום', 'ירושלים']);
@@ -454,6 +454,7 @@ function isAllCountryGroup(group) {
 }
 
 function detectGroupRegion(group) {
+  if (['north', 'center', 'jerusalem', 'sharon', 'south'].includes(group?.region)) return group.region;
   const name = normalizeHebrewText(group?.name || '');
 
   if (hasAny(name, ['ירושלים'])) return 'jerusalem';
