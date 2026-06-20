@@ -7,14 +7,21 @@ import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 
 const TIME_ROUNDS = new Set(['morning', 'noon', 'evening']);
+const LAP_ROUNDS = new Set(['lap1', 'lap2', 'lap3', 'lap4']);
 const REGION_ROUNDS = new Set(['north', 'center', 'jerusalem', 'sharon', 'south']);
-const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...REGION_ROUNDS]);
+const ALL_COUNTRY_ROUNDS = new Set(['allcountry', 'all1', 'all2']);
+const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS, ...REGION_ROUNDS, ...ALL_COUNTRY_ROUNDS]);
 const REGION_LABELS = {
   north: 'צפון',
   center: 'מרכז',
   jerusalem: 'ירושלים והסביבה',
   sharon: 'השרון',
   south: 'דרום'
+};
+const ALL_COUNTRY_LABELS = {
+  allcountry: 'כל הארץ',
+  all1: 'כל הארץ 1',
+  all2: 'כל הארץ 2'
 };
 const REGION_ALIASES = {
   north: 'north',
@@ -36,6 +43,16 @@ const REGION_ALIASES = {
   darom: 'south',
   'דרום': 'south'
 };
+Object.assign(REGION_ALIASES, {
+  all: 'allcountry',
+  allcountry: 'allcountry',
+  country: 'allcountry',
+  all1: 'all1',
+  all2: 'all2',
+  'כלהארץ': 'allcountry',
+  'כלהארץ1': 'all1',
+  'כלהארץ2': 'all2'
+});
 const ROOT_DIR = process.cwd();
 const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const POSTS_FILE = path.join(ROOT_DIR, 'posts.json');
@@ -49,8 +66,8 @@ const round = normalizeRoundArg(args.filter((arg) => !arg.startsWith('-')));
 const isDevMode = args.includes('--dev') || process.env.PUBLISHER_DEV === '1' || process.env.DEV_DELAY === '1';
 
 if (!VALID_ROUNDS.has(round)) {
-  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south [--dev]');
-  console.error('Example: node publisher.js north --dev');
+  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south|allcountry|all1|all2|lap1|lap2|lap3|lap4 [--dev]');
+  console.error('Example: node publisher.js all1 --dev');
   process.exit(1);
 }
 
@@ -537,16 +554,55 @@ function normalizeRoundArg(positionArgs) {
   if (!first) return '';
 
   const cleanFirst = first.toLowerCase().replace(/\s+/g, '');
-  if (cleanFirst === 'lap' && second) return '';
+  if (cleanFirst === 'lap' && second) return `lap${String(second).replace(/\D/g, '')}`;
+  if ((cleanFirst === 'all' || cleanFirst === 'allcountry') && second) {
+    const chunk = String(second).replace(/\D/g, '');
+    if (chunk) return `all${chunk}`;
+  }
   return REGION_ALIASES[cleanFirst] || cleanFirst;
 }
 
 function getPostRound(activeRound) {
-  // סבבי האזורים מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
-  return REGION_ROUNDS.has(activeRound) ? 'morning' : activeRound;
+  // סבבי חלוקה מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
+  return REGION_ROUNDS.has(activeRound) || LAP_ROUNDS.has(activeRound) || ALL_COUNTRY_ROUNDS.has(activeRound)
+    ? 'morning'
+    : activeRound;
 }
 
 function getRoundPlan(allGroups, activeRound) {
+  if (LAP_ROUNDS.has(activeRound)) {
+    const lapIndex = Number(activeRound.replace('lap', '')) - 1;
+    const lapCount = LAP_ROUNDS.size;
+    const baseSize = Math.floor(allGroups.length / lapCount);
+    const remainder = allGroups.length % lapCount;
+    const startIndex = lapIndex * baseSize + Math.min(lapIndex, remainder);
+    const size = baseSize + (lapIndex < remainder ? 1 : 0);
+    const endIndex = startIndex + size;
+
+    return {
+      groups: allGroups.slice(startIndex, endIndex),
+      isRegion: true,
+      label: activeRound,
+      startIndex,
+      endIndex
+    };
+  }
+
+  if (ALL_COUNTRY_ROUNDS.has(activeRound)) {
+    const allCountryGroups = allGroups.filter((group) => isAllCountryGroup(group));
+    const groups = activeRound === 'allcountry'
+      ? allCountryGroups
+      : getAllCountryChunk(allCountryGroups, activeRound);
+
+    return {
+      groups,
+      isRegion: true,
+      label: ALL_COUNTRY_LABELS[activeRound] || activeRound,
+      startIndex: 0,
+      endIndex: allGroups.length
+    };
+  }
+
   if (!REGION_ROUNDS.has(activeRound)) {
     return {
       groups: allGroups,
@@ -558,12 +614,33 @@ function getRoundPlan(allGroups, activeRound) {
   }
 
   return {
-    groups: allGroups.filter((group) => detectGroupRegion(group) === activeRound),
+    groups: allGroups.filter((group) => !isAllCountryGroup(group) && detectGroupRegion(group) === activeRound),
     isRegion: true,
     label: REGION_LABELS[activeRound] || activeRound,
     startIndex: 0,
     endIndex: allGroups.length
   };
+}
+
+function getAllCountryChunk(groups, activeRound) {
+  const chunkSize = 25;
+  const chunkIndex = Number(activeRound.replace('all', '')) - 1;
+  const startIndex = chunkIndex * chunkSize;
+  return groups.slice(startIndex, startIndex + chunkSize);
+}
+
+function isAllCountryGroup(group) {
+  const name = normalizeHebrewText(group?.name || '');
+  const explicitAllCountry = hasAny(name, [
+    '\u05d1\u05db\u05dc \u05d4\u05d0\u05e8\u05e5',
+    '\u05db\u05dc \u05d4\u05d0\u05e8\u05e5',
+    '\u05db\u05dc \u05e8\u05d7\u05d1\u05d9 \u05d4\u05d0\u05e8\u05e5',
+    '\u05db\u05dc\u05dc \u05d0\u05e8\u05e6\u05d9'
+  ]);
+  const multiRegion = hasAny(name, ['\u05de\u05e8\u05db\u05d6']) &&
+    hasAny(name, ['\u05e6\u05e4\u05d5\u05df', '\u05d3\u05e8\u05d5\u05dd', '\u05d9\u05e8\u05d5\u05e9\u05dc\u05d9\u05dd']);
+
+  return explicitAllCountry || multiRegion;
 }
 
 function detectGroupRegion(group) {
