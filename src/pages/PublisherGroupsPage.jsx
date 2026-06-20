@@ -16,6 +16,7 @@ export default function PublisherGroupsPage() {
   const [form, setForm] = useState({ name: '', url: '', region: 'auto' });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [scanCopied, setScanCopied] = useState(false);
 
   const grouped = useMemo(() => {
     const next = Object.fromEntries(REGION_OPTIONS.filter((region) => region.value !== 'auto').map((region) => [region.value, []]));
@@ -49,12 +50,35 @@ export default function PublisherGroupsPage() {
     }
   }
 
+  async function copyScanCommand() {
+    await copyText('npm run scan:groups');
+    setScanCopied(true);
+    window.setTimeout(() => setScanCopied(false), 1800);
+  }
+
   return (
     <div className="space-y-5">
-      <header>
-        <h1 className="text-2xl font-bold">ניהול קבוצות פרסום</h1>
-        <p className="text-slate-500 text-sm">הקבוצות מסודרות לפי אזורים. קבוצה חדשה שתתווסף כאן תיכנס גם להרצות של הבוט.</p>
+      <header className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold">ניהול קבוצות פרסום</h1>
+          <p className="text-slate-500 text-sm">הקבוצות מסודרות לפי אזורים. קבוצה חדשה שתתווסף כאן תיכנס גם להרצות של הבוט.</p>
+        </div>
+        <button type="button" className="btn-secondary" onClick={copyScanCommand}>
+          {scanCopied ? 'הפקודה הועתקה' : 'סריקת קבוצות'}
+        </button>
       </header>
+
+      <section className="card p-4 bg-slate-50">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-bold text-slate-900">סריקה אוטומטית מפייסבוק</h2>
+            <p className="text-sm text-slate-500">הפעל במחשב את הפקודה, אשר כניסה לפייסבוק אם צריך, והקבוצות החדשות יתווספו למערכת ולבוט.</p>
+          </div>
+          <code dir="ltr" className="rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white">
+            npm run scan:groups
+          </code>
+        </div>
+      </section>
 
       <form onSubmit={onAdd} className="card p-4 grid grid-cols-1 lg:grid-cols-[1.2fr_1.4fr_220px_auto] gap-3 items-end">
         <label className="block">
@@ -131,4 +155,21 @@ export default function PublisherGroupsPage() {
       </div>
     </div>
   );
+}
+
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const el = document.createElement('textarea');
+  el.value = text;
+  el.setAttribute('readonly', '');
+  el.style.position = 'fixed';
+  el.style.opacity = '0';
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
 }

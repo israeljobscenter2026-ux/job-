@@ -9,6 +9,7 @@ dist
 facebook-profile/
 .publisher-cache/
 publish-log.json
+facebook-groups-scan.json
 
 # Claude Code local settings (per-user permissions, etc.)
 .claude/settings.local.json
