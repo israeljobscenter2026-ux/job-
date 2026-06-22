@@ -27,6 +27,12 @@ const REGION_LABELS = {
   allcountry: 'כל הארץ'
 };
 
+function getAdLabel(ad) {
+  const title = ad.title?.trim() || 'ללא כותרת';
+  const notes = ad.notes?.trim();
+  return notes ? `${title} - ${notes}` : title;
+}
+
 export default function PublishAdPage() {
   const { ads } = useData();
   const [adId, setAdId] = useState('');
@@ -125,7 +131,7 @@ export default function PublishAdPage() {
               <option value="">בחר מודעה</option>
               {sortedAds.map((ad) => (
                 <option key={ad.id} value={ad.id}>
-                  {ad.title || 'פרסומת'} {ad.status === 'published' ? '(פורסם)' : '(טיוטה)'}
+                  {getAdLabel(ad)}
                 </option>
               ))}
             </select>
@@ -165,8 +171,15 @@ export default function PublishAdPage() {
         </form>
 
         {selectedAd && (
-          <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-600">
-            מודעה נבחרת: <span className="font-semibold text-slate-900">{selectedAd.title || 'פרסומת'}</span>
+          <div className="mt-4 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-600 space-y-1">
+            <div>
+              מודעה נבחרת: <span className="font-semibold text-slate-900">{selectedAd.title || 'ללא כותרת'}</span>
+            </div>
+            {selectedAd.notes && (
+              <div>
+                הערה: <span className="font-semibold text-slate-900">{selectedAd.notes}</span>
+              </div>
+            )}
           </div>
         )}
 

@@ -291,8 +291,11 @@ function AdCard({ ad, onEdit, onPublish, onFacebookPublish, facebookPublishBusy,
         </span>
       </div>
       <div className="p-4 flex-1 flex flex-col">
+        <h3 className="text-base font-bold text-slate-900 line-clamp-2">
+          {ad.title || 'ללא כותרת'}
+        </h3>
         {ad.body && (
-          <p className="text-sm text-slate-600 line-clamp-4 whitespace-pre-wrap">{ad.body}</p>
+          <p className="mt-2 text-sm text-slate-600 line-clamp-4 whitespace-pre-wrap">{ad.body}</p>
         )}
         <div className="mt-3 text-xs text-slate-500 space-y-1">
           <div>נוצר: {fmt(ad.createdAt)}</div>
@@ -422,6 +425,16 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
             {imgError && <div className="mt-2 text-xs text-rose-600">{imgError}</div>}
           </div>
         </div>
+
+        <label className="block">
+          <span className="label">כותרת</span>
+          <input
+            className="input"
+            value={form.title}
+            onChange={(e) => update('title', e.target.value)}
+            placeholder="לדוגמה: דרושים בק אופיס בחיפה"
+          />
+        </label>
 
         <label className="block">
           <span className="label">אזור יעד</span>
