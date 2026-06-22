@@ -88,6 +88,7 @@ function adFromRow(row) {
     body: row.body || '',
     image: row.image || '',
     notes: row.notes || '',
+    targetRegion: row.target_region || 'allcountry',
     status: row.status || 'draft',
     publishedAt: row.published_at,
     createdAt: row.created_at,
@@ -101,7 +102,8 @@ function adToRow(payload) {
     title: sanitizeText(payload.title || body.split('\n').find(Boolean) || 'פרסומת').trim(),
     body,
     image: payload.image || '',
-    notes: sanitizeText(payload.notes || '')
+    notes: sanitizeText(payload.notes || ''),
+    target_region: normalizeAdTargetRegion(payload.targetRegion)
   };
 }
 
@@ -111,9 +113,16 @@ function adPatchToRow(patch) {
   if (patch.body !== undefined) row.body = withLandingPageLink(patch.body);
   if (patch.image !== undefined) row.image = patch.image || '';
   if (patch.notes !== undefined) row.notes = sanitizeText(patch.notes);
+  if (patch.targetRegion !== undefined) row.target_region = normalizeAdTargetRegion(patch.targetRegion);
   if (patch.status !== undefined) row.status = patch.status;
   if (patch.publishedAt !== undefined) row.published_at = patch.publishedAt;
   return row;
+}
+
+function normalizeAdTargetRegion(value) {
+  const allowed = new Set(['north', 'south', 'center', 'sharon', 'jerusalem', 'allcountry', 'all']);
+  const clean = String(value || 'allcountry').trim().toLowerCase();
+  return allowed.has(clean) ? clean : 'allcountry';
 }
 
 function publisherGroupFromRow(row) {

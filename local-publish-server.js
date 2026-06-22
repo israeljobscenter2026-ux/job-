@@ -19,7 +19,7 @@ const DEFAULT_GROUP_IMAGE_PATH = path.join(
   'assets',
   'ChatGPT_Image_Jun_18_2026_10_19_30_PM.png'
 );
-const VALID_REGIONS = new Set(['north', 'south', 'center', 'sharon', 'jerusalem', 'all']);
+const VALID_REGIONS = new Set(['north', 'south', 'center', 'sharon', 'jerusalem', 'allcountry', 'all']);
 const VALID_LAPS = new Set(['lap1', 'lap2', 'lap3', 'lap4', 'all']);
 const ALLOWED_ORIGIN_PATTERNS = [
   /^http:\/\/127\.0\.0\.1:\d+$/,
@@ -84,7 +84,6 @@ server.listen(PORT, HOST, () => {
 
 async function buildPublishPreview(payload) {
   const adId = String(payload?.adId || '').trim();
-  const region = normalizeSelection(payload?.region, VALID_REGIONS, 'all');
   const lap = normalizeSelection(payload?.lap, VALID_LAPS, 'all');
 
   if (!adId) throw new Error('Missing adId');
@@ -92,10 +91,12 @@ async function buildPublishPreview(payload) {
   const env = await readLocalEnv();
   const supabase = createSupabaseServiceClient(env);
   const ad = await loadAd(supabase, adId);
+  const region = resolvePublishRegion(payload, ad);
   const groups = applyLapFilter(applyRegionFilter(await loadPublisherGroups(supabase), region), lap);
 
   return {
     adTitle: ad.title || 'פרסומת',
+    targetRegion: region,
     totalGroups: groups.length,
     groups: groups.map((group) => ({
       name: group.name,
@@ -108,7 +109,6 @@ async function buildPublishPreview(payload) {
 
 async function startFacebookPublish(payload) {
   const adId = String(payload?.adId || '').trim();
-  const region = normalizeSelection(payload?.region, VALID_REGIONS, 'all');
   const lap = normalizeSelection(payload?.lap, VALID_LAPS, 'all');
   const dev = Boolean(payload?.dev);
 
@@ -117,6 +117,7 @@ async function startFacebookPublish(payload) {
   const env = await readLocalEnv();
   const supabase = createSupabaseServiceClient(env);
   const ad = await loadAd(supabase, adId);
+  const region = resolvePublishRegion(payload, ad);
   const groups = applyLapFilter(applyRegionFilter(await loadPublisherGroups(supabase), region), lap);
   const selectedPostText = withLandingPageLink(ad.body || '');
   const selectedImagePath = await resolveAdImage(ad.image);
@@ -127,6 +128,7 @@ async function startFacebookPublish(payload) {
   const summary = {
     started: true,
     adTitle: ad.title || 'פרסומת',
+    targetRegion: region,
     totalGroups: groups.length,
     currentGroup: '',
     prepared: 0,
@@ -238,7 +240,7 @@ async function startFacebookPublish(payload) {
 async function loadAd(supabase, adId) {
   const { data, error } = await supabase
     .from('ads')
-    .select('id,title,body,image,status')
+    .select('id,title,body,image,status,target_region')
     .eq('id', adId)
     .maybeSingle();
 
@@ -284,6 +286,7 @@ async function loadPublisherGroups(supabase) {
 
 function applyRegionFilter(groups, region) {
   if (!region || region === 'all') return groups;
+  if (region === 'allcountry') return groups.filter((group) => isAllCountryGroup(group) || detectGroupRegion(group) === 'allcountry');
   return groups.filter((group) => !isAllCountryGroup(group) && detectGroupRegion(group) === region);
 }
 
@@ -302,6 +305,13 @@ function applyLapFilter(groups, lap) {
 function normalizeSelection(value, allowed, fallback) {
   const clean = String(value || fallback).trim().toLowerCase();
   return allowed.has(clean) ? clean : fallback;
+}
+
+function resolvePublishRegion(payload, ad) {
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'region')) {
+    return normalizeSelection(payload.region, VALID_REGIONS, 'all');
+  }
+  return normalizeSelection(ad?.target_region, VALID_REGIONS, 'allcountry');
 }
 
 function createSupabaseServiceClient(env) {

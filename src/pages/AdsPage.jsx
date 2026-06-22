@@ -8,6 +8,16 @@ const STATUS_COLOR = {
   draft: 'bg-amber-100 text-amber-800 border border-amber-200',
   published: 'bg-emerald-100 text-emerald-800 border border-emerald-200'
 };
+const TARGET_REGION_OPTIONS = [
+  { value: 'allcountry', label: 'כל הארץ' },
+  { value: 'north', label: 'צפון' },
+  { value: 'center', label: 'מרכז' },
+  { value: 'sharon', label: 'השרון' },
+  { value: 'jerusalem', label: 'ירושלים והסביבה' },
+  { value: 'south', label: 'דרום' },
+  { value: 'all', label: 'כל הקבוצות' }
+];
+const TARGET_REGION_LABELS = Object.fromEntries(TARGET_REGION_OPTIONS.map((option) => [option.value, option.label]));
 
 export default function AdsPage() {
   const { ads, publisherGroups, createAd, updateAd, publishAd, unpublishAd, deleteAd } = useData();
@@ -16,6 +26,9 @@ export default function AdsPage() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [publishTarget, setPublishTarget] = useState(null);
+  const [facebookPublishBusyId, setFacebookPublishBusyId] = useState(null);
+  const [facebookPublishMessage, setFacebookPublishMessage] = useState('');
+  const [facebookPublishResult, setFacebookPublishResult] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteStep, setDeleteStep] = useState(0);
 
@@ -58,6 +71,41 @@ export default function AdsPage() {
     setCopiedCommand(command);
     window.setTimeout(() => setCopiedCommand(''), 1600);
   }
+  async function startFacebookPublish(ad) {
+    setFacebookPublishBusyId(ad.id);
+    setFacebookPublishMessage('הפרסום רץ. אשר ידנית כל פוסט בחלון פייסבוק.');
+    setFacebookPublishResult(null);
+
+    try {
+      const response = await fetch('http://127.0.0.1:4546/start-facebook-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adId: ad.id, dev: true })
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'לא הצלחנו להתחיל פרסום בפייסבוק.');
+      }
+
+      setFacebookPublishResult({
+        adTitle: ad.title || 'פרסומת',
+        targetRegion: payload.targetRegion || ad.targetRegion || 'allcountry',
+        totalGroups: payload.totalGroups || 0,
+        prepared: payload.prepared || 0,
+        skipped: payload.skipped || 0,
+        failed: payload.failed || 0
+      });
+      setFacebookPublishMessage('');
+    } catch (err) {
+      const isConnectionError = err instanceof TypeError;
+      setFacebookPublishMessage(isConnectionError
+        ? 'כדי לפרסם בפייסבוק יש להפעיל קודם: npm run publish:server'
+        : err.message || 'לא הצלחנו להתחיל פרסום בפייסבוק.');
+    } finally {
+      setFacebookPublishBusyId(null);
+    }
+  }
 
   const editingAd = editingId ? ads.find((a) => a.id === editingId) : null;
 
@@ -80,6 +128,24 @@ export default function AdsPage() {
         onCopy={copyCommand}
       />
 
+      {(facebookPublishMessage || facebookPublishResult) && (
+        <section className={`card p-4 ${facebookPublishResult ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
+          {facebookPublishMessage && (
+            <p className="text-sm font-semibold text-amber-900">{facebookPublishMessage}</p>
+          )}
+          {facebookPublishResult && (
+            <div className="grid gap-1 text-sm text-emerald-900">
+              <div className="font-bold">תוצאת פרסום בפייסבוק: {facebookPublishResult.adTitle}</div>
+              <div>אזור יעד: {TARGET_REGION_LABELS[facebookPublishResult.targetRegion] || facebookPublishResult.targetRegion}</div>
+              <div>נבחרו {facebookPublishResult.totalGroups} קבוצות</div>
+              <div>הוכנו {facebookPublishResult.prepared} פוסטים</div>
+              <div>דולגו {facebookPublishResult.skipped} קבוצות</div>
+              <div>נכשלו {facebookPublishResult.failed} קבוצות</div>
+            </div>
+          )}
+        </section>
+      )}
+
       <div className="flex gap-2 flex-wrap">
         <FilterChip active={filter === 'all'} onClick={() => setFilter('all')} label={`הכול (${counts.all})`} />
         <FilterChip active={filter === 'draft'} onClick={() => setFilter('draft')} label={`טיוטה (${counts.draft})`} />
@@ -98,6 +164,8 @@ export default function AdsPage() {
               ad={ad}
               onEdit={() => openEdit(ad)}
               onPublish={() => setPublishTarget(ad)}
+              onFacebookPublish={() => startFacebookPublish(ad)}
+              facebookPublishBusy={facebookPublishBusyId === ad.id}
               onUnpublish={() => unpublishAd(ad.id)}
               onDelete={() => confirmDelete(ad)}
             />
@@ -206,7 +274,7 @@ function PublisherCommandsPanel({ commands, copiedCommand, onCopy }) {
   );
 }
 
-function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
+function AdCard({ ad, onEdit, onPublish, onFacebookPublish, facebookPublishBusy, onUnpublish, onDelete }) {
   const fmt = (iso) => new Date(iso).toLocaleDateString('he-IL');
   return (
     <div className="card overflow-hidden flex flex-col">
@@ -229,6 +297,9 @@ function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
         <div className="mt-3 text-xs text-slate-500 space-y-1">
           <div>נוצר: {fmt(ad.createdAt)}</div>
           {ad.publishedAt && <div>פורסם: {fmt(ad.publishedAt)}</div>}
+          <div className="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-center text-sm font-bold text-slate-800">
+            אזור יעד: {TARGET_REGION_LABELS[ad.targetRegion || 'allcountry'] || ad.targetRegion || 'כל הארץ'}
+          </div>
           {ad.notes && (
             <div className="mt-3 rounded-md bg-amber-50 border border-amber-200 px-3 py-2 text-center text-sm font-bold text-amber-900 line-clamp-3">
               <span>הערה: </span>{ad.notes}
@@ -242,6 +313,13 @@ function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
           ) : (
             <button className="btn-secondary !py-1.5 !px-3 text-xs" onClick={onUnpublish}>החזר לטיוטה</button>
           )}
+          <button
+            className="btn-primary !py-1.5 !px-3 text-xs"
+            onClick={onFacebookPublish}
+            disabled={facebookPublishBusy}
+          >
+            {facebookPublishBusy ? 'מפרסם...' : 'פרסם בפייסבוק'}
+          </button>
           <button className="btn-ghost !py-1.5 !px-3 text-xs text-rose-600 hover:bg-rose-50" onClick={onDelete}>מחק</button>
         </div>
       </div>
@@ -252,7 +330,7 @@ function AdCard({ ad, onEdit, onPublish, onUnpublish, onDelete }) {
 function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
   const isEdit = !!ad;
   const fileRef = useRef(null);
-  const [form, setForm] = useState({ title: '', body: '', image: '', notes: '' });
+  const [form, setForm] = useState({ title: '', body: '', image: '', notes: '', targetRegion: 'allcountry' });
   const [imgError, setImgError] = useState(null);
   const [imgBusy, setImgBusy] = useState(false);
 
@@ -262,7 +340,8 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
       title: ad?.title || '',
       body: ad?.body || '',
       image: ad?.image || '',
-      notes: ad?.notes || ''
+      notes: ad?.notes || '',
+      targetRegion: ad?.targetRegion || 'allcountry'
     });
     setImgError(null);
   }, [open, ad?.id]);
@@ -343,6 +422,22 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
             {imgError && <div className="mt-2 text-xs text-rose-600">{imgError}</div>}
           </div>
         </div>
+
+        <label className="block">
+          <span className="label">אזור יעד</span>
+          <select
+            className="input"
+            value={form.targetRegion}
+            onChange={(e) => update('targetRegion', e.target.value)}
+          >
+            {TARGET_REGION_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs text-slate-500">
+            לפי אזור זה המערכת תבחר אוטומטית קבוצות לפרסום בפייסבוק.
+          </span>
+        </label>
 
         <label className="block">
           <span className="label">טקסט המודעה</span>
