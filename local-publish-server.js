@@ -21,6 +21,7 @@ const DEFAULT_GROUP_IMAGE_PATH = path.join(
 );
 const VALID_REGIONS = new Set(['north', 'south', 'center', 'sharon', 'jerusalem', 'allcountry', 'all']);
 const VALID_LAPS = new Set(['lap1', 'lap2', 'lap3', 'lap4', 'all']);
+const REGION_CHUNK_SIZE = 25;
 const ALLOWED_ORIGIN_PATTERNS = [
   /^http:\/\/127\.0\.0\.1:\d+$/,
   /^http:\/\/localhost:\d+$/,
@@ -286,7 +287,17 @@ async function loadPublisherGroups(supabase) {
 
 function applyRegionFilter(groups, region) {
   if (!region || region === 'all') return groups;
+  const regionChunk = getRegionChunkParts(region);
+  if (regionChunk) {
+    const baseGroups = applyRegionFilter(groups, regionChunk.region);
+    return getChunk(baseGroups, regionChunk.chunkNumber, REGION_CHUNK_SIZE);
+  }
   if (region === 'allcountry') return groups.filter((group) => isAllCountryGroup(group) || detectGroupRegion(group) === 'allcountry');
+  const allCountryChunk = getAllCountryChunkNumber(region);
+  if (allCountryChunk) {
+    const baseGroups = applyRegionFilter(groups, 'allcountry');
+    return getChunk(baseGroups, allCountryChunk, REGION_CHUNK_SIZE);
+  }
   return groups.filter((group) => !isAllCountryGroup(group) && detectGroupRegion(group) === region);
 }
 
@@ -304,6 +315,7 @@ function applyLapFilter(groups, lap) {
 
 function normalizeSelection(value, allowed, fallback) {
   const clean = String(value || fallback).trim().toLowerCase();
+  if (getRegionChunkParts(clean) || getAllCountryChunkNumber(clean)) return clean;
   return allowed.has(clean) ? clean : fallback;
 }
 
@@ -828,6 +840,26 @@ function hasAny(value, needles) {
 
 function normalizeUrl(url) {
   return String(url || '').trim().replace(/\/+$/, '').toLowerCase();
+}
+
+function getRegionChunkParts(value) {
+  const match = String(value || '').match(/^(north|center|jerusalem|sharon|south)(\d+)$/);
+  if (!match) return null;
+  const chunkNumber = Number(match[2]);
+  if (!Number.isFinite(chunkNumber) || chunkNumber < 1) return null;
+  return { region: match[1], chunkNumber };
+}
+
+function getAllCountryChunkNumber(value) {
+  const match = String(value || '').match(/^all(\d+)$/);
+  if (!match) return null;
+  const chunkNumber = Number(match[1]);
+  return Number.isFinite(chunkNumber) && chunkNumber > 0 ? chunkNumber : null;
+}
+
+function getChunk(groups, chunkNumber, chunkSize) {
+  const startIndex = (chunkNumber - 1) * chunkSize;
+  return groups.slice(startIndex, startIndex + chunkSize);
 }
 
 function writeCorsHeaders(req, res) {

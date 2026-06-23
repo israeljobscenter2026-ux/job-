@@ -10,6 +10,7 @@ const TIME_ROUNDS = new Set(['morning', 'noon', 'evening']);
 const LAP_ROUNDS = new Set(['lap1', 'lap2', 'lap3', 'lap4']);
 const REGION_ROUNDS = new Set(['north', 'center', 'jerusalem', 'sharon', 'south']);
 const VALID_ROUNDS = new Set([...TIME_ROUNDS, ...LAP_ROUNDS, ...REGION_ROUNDS]);
+const REGION_CHUNK_SIZE = 25;
 const REGION_LABELS = {
   north: 'צפון',
   center: 'מרכז',
@@ -64,8 +65,8 @@ const round = normalizeRoundArg(args.filter((arg) => !arg.startsWith('-')));
 const isDevMode = args.includes('--dev') || process.env.PUBLISHER_DEV === '1' || process.env.DEV_DELAY === '1';
 
 if (!isValidRound(round)) {
-  console.error('Usage: node publisher.js north|center|jerusalem|sharon|south|all1|all2|lap1|lap2|lap3|lap4 [--dev]');
-  console.error('Example: node publisher.js all1 --dev');
+  console.error('Usage: node publisher.js north1|north2|center1|jerusalem1|sharon1|south1|all1|all2|lap1|lap2|lap3|lap4 [--dev]');
+  console.error('Example: node publisher.js north1 --dev');
   process.exit(1);
 }
 
@@ -596,24 +597,38 @@ function normalizeRoundArg(positionArgs) {
 
   const cleanFirst = first.toLowerCase().replace(/\s+/g, '');
   if (cleanFirst === 'lap' && second) return `lap${String(second).replace(/\D/g, '')}`;
+  const regionAlias = REGION_ALIASES[cleanFirst] || cleanFirst;
+  if (REGION_ROUNDS.has(regionAlias) && second) {
+    const chunk = String(second).replace(/\D/g, '');
+    if (chunk) return `${regionAlias}${chunk}`;
+  }
   if ((cleanFirst === 'all' || cleanFirst === 'allcountry') && second) {
     const chunk = String(second).replace(/\D/g, '');
     if (chunk) return `all${chunk}`;
+  }
+  const chunkedRegion = cleanFirst.match(/^([a-z]+)(\d+)$/);
+  if (chunkedRegion) {
+    const baseRegion = REGION_ALIASES[chunkedRegion[1]] || chunkedRegion[1];
+    if (REGION_ROUNDS.has(baseRegion)) return `${baseRegion}${chunkedRegion[2]}`;
   }
   return REGION_ALIASES[cleanFirst] || cleanFirst;
 }
 
 function isValidRound(activeRound) {
-  return VALID_ROUNDS.has(activeRound) || isAllCountryRound(activeRound);
+  return VALID_ROUNDS.has(activeRound) || isAllCountryRound(activeRound) || isRegionChunkRound(activeRound);
 }
 
 function isAllCountryRound(activeRound) {
   return activeRound === 'allcountry' || /^all\d+$/.test(activeRound);
 }
 
+function isRegionChunkRound(activeRound) {
+  return getRegionChunkParts(activeRound) !== null;
+}
+
 function getPostRound(activeRound) {
   // סבבי חלוקה מחלקים קבוצות, אבל משתמשים באותו טקסט של סבב הבוקר.
-  return REGION_ROUNDS.has(activeRound) || LAP_ROUNDS.has(activeRound) || isAllCountryRound(activeRound)
+  return REGION_ROUNDS.has(activeRound) || LAP_ROUNDS.has(activeRound) || isAllCountryRound(activeRound) || isRegionChunkRound(activeRound)
     ? 'morning'
     : activeRound;
 }
@@ -650,6 +665,20 @@ function getRoundPlan(allGroups, activeRound) {
     };
   }
 
+  if (isRegionChunkRound(activeRound)) {
+    const { region, chunkNumber } = getRegionChunkParts(activeRound);
+    const regionGroups = allGroups.filter((group) => !isAllCountryGroup(group) && detectGroupRegion(group) === region);
+    const groups = getChunk(regionGroups, chunkNumber, REGION_CHUNK_SIZE);
+
+    return {
+      groups,
+      isRegion: true,
+      label: `${REGION_LABELS[region] || region} ${chunkNumber}`,
+      startIndex: 0,
+      endIndex: allGroups.length
+    };
+  }
+
   if (!REGION_ROUNDS.has(activeRound)) {
     return {
       groups: allGroups,
@@ -670,16 +699,28 @@ function getRoundPlan(allGroups, activeRound) {
 }
 
 function getAllCountryChunk(groups, activeRound) {
-  const chunkSize = 25;
   const chunkIndex = getAllCountryRoundNumber(activeRound) - 1;
-  const startIndex = chunkIndex * chunkSize;
-  return groups.slice(startIndex, startIndex + chunkSize);
+  return getChunk(groups, chunkIndex + 1, REGION_CHUNK_SIZE);
 }
 
 function getAllCountryRoundNumber(activeRound) {
   if (activeRound === 'allcountry') return 1;
   const value = Number(activeRound.replace('all', ''));
   return Number.isFinite(value) && value > 0 ? value : 1;
+}
+
+function getRegionChunkParts(activeRound) {
+  const match = String(activeRound || '').match(/^([a-z]+)(\d+)$/);
+  if (!match) return null;
+  const region = REGION_ALIASES[match[1]] || match[1];
+  const chunkNumber = Number(match[2]);
+  if (!REGION_ROUNDS.has(region) || !Number.isFinite(chunkNumber) || chunkNumber < 1) return null;
+  return { region, chunkNumber };
+}
+
+function getChunk(groups, chunkNumber, chunkSize) {
+  const startIndex = (chunkNumber - 1) * chunkSize;
+  return groups.slice(startIndex, startIndex + chunkSize);
 }
 
 function isAllCountryGroup(group) {

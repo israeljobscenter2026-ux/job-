@@ -11,6 +11,8 @@ const REGION_OPTIONS = [
   { value: 'allcountry', label: 'כל הארץ' }
 ];
 
+const REGION_CHUNK_SIZE = 25;
+
 export default function PublisherGroupsPage() {
   const { publisherGroups, addPublisherGroup, refreshData } = useData();
   const [form, setForm] = useState({ name: '', url: '', region: 'auto' });
@@ -31,6 +33,25 @@ export default function PublisherGroupsPage() {
     }
     return next;
   }, [publisherGroups]);
+
+  const publishRounds = useMemo(() => {
+    const regions = REGION_OPTIONS.filter((region) => region.value !== 'auto');
+    return regions.flatMap((region) => {
+      const groups = grouped[region.value] || [];
+      const chunks = Math.max(1, Math.ceil(groups.length / REGION_CHUNK_SIZE));
+      return Array.from({ length: chunks }, (_, index) => {
+        const commandRegion = region.value === 'allcountry' ? 'all' : region.value;
+        const roundNumber = index + 1;
+        const count = groups.slice(index * REGION_CHUNK_SIZE, (index + 1) * REGION_CHUNK_SIZE).length;
+        return {
+          key: `${region.value}-${roundNumber}`,
+          label: `${region.label} ${roundNumber}`,
+          command: `node publisher.js ${commandRegion}${roundNumber} --dev`,
+          count
+        };
+      }).filter((round) => round.count > 0);
+    });
+  }, [grouped]);
 
   function update(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -111,6 +132,31 @@ export default function PublisherGroupsPage() {
           <code dir="ltr" className="rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white">
             npm run scan:server
           </code>
+        </div>
+      </section>
+
+      <section className="card p-4">
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="font-bold text-slate-900">פקודות פרסום לפי אזורים</h2>
+            <p className="text-sm text-slate-500">כל סבב מכיל עד {REGION_CHUNK_SIZE} קבוצות כדי שלא נפרסם יותר מדי באותו אזור.</p>
+          </div>
+          <span className="badge bg-brand-100 text-brand-700 border border-brand-200">
+            {publishRounds.length} סבבים
+          </span>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+          {publishRounds.map((round) => (
+            <div key={round.key} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-bold text-slate-900">{round.label}</span>
+                <span className="text-xs font-semibold text-slate-500">{round.count} קבוצות</span>
+              </div>
+              <code dir="ltr" className="mt-2 block rounded bg-slate-950 px-2 py-1.5 text-left text-xs font-semibold text-white">
+                {round.command}
+              </code>
+            </div>
+          ))}
         </div>
       </section>
 
