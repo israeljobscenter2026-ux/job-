@@ -153,7 +153,7 @@ export default function AdsPage() {
           {facebookPublishResult && (
             <div className="grid gap-1 text-sm text-emerald-900">
               <div className="font-bold">תוצאת פרסום בפייסבוק: {facebookPublishResult.adTitle}</div>
-              <div>אזור יעד: {TARGET_REGION_LABELS[facebookPublishResult.targetRegion] || facebookPublishResult.targetRegion}</div>
+              <div>אזור יעד: {getTargetRegionLabel(facebookPublishResult.targetRegion)}</div>
               <div>נבחרו {facebookPublishResult.totalGroups} קבוצות</div>
               <div>הוכנו {facebookPublishResult.prepared} פוסטים</div>
               <div>דולגו {facebookPublishResult.skipped} קבוצות</div>
@@ -577,6 +577,21 @@ function FacebookRoundDialog({ target, busy, onClose, onSelect }) {
       </div>
     </Modal>
   );
+}
+
+function getTargetRegionLabel(region) {
+  if (!region) return 'כל הקבוצות';
+  if (TARGET_REGION_LABELS[region]) return TARGET_REGION_LABELS[region];
+
+  const allCountryMatch = String(region).match(/^all(\d+)$/);
+  if (allCountryMatch) return `כל הארץ ${allCountryMatch[1]}`;
+
+  const regionMatch = String(region).match(/^(north|center|jerusalem|sharon|south)(\d+)$/);
+  if (regionMatch) {
+    return `${TARGET_REGION_LABELS[regionMatch[1]] || regionMatch[1]} ${regionMatch[2]}`;
+  }
+
+  return region;
 }
 
 function buildPublisherCommands(groups) {
