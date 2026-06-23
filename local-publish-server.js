@@ -11,7 +11,9 @@ const ROOT_DIR = process.cwd();
 const ENV_FILE = path.join(ROOT_DIR, '.env');
 const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const LOG_FILE = path.join(ROOT_DIR, 'publish-log.json');
-const PROFILE_DIR = path.join(ROOT_DIR, 'facebook-profile');
+const PROFILE_DIR = process.env.FACEBOOK_PUBLISH_PROFILE_DIR
+  ? path.resolve(process.env.FACEBOOK_PUBLISH_PROFILE_DIR)
+  : path.join(ROOT_DIR, 'facebook-publish-profile-active');
 const CACHE_DIR = path.join(ROOT_DIR, '.publisher-cache');
 const LANDING_PAGE_URL = 'https://israel-jobs-center2026.netlify.app/';
 const DEFAULT_GROUP_IMAGE_PATH = path.join(
@@ -150,6 +152,11 @@ async function startFacebookPublish(payload) {
   const page = context.pages()[0] || await context.newPage();
 
   try {
+    const loggedIn = await waitForFacebookLogin(page, 15 * 60_000);
+    if (!loggedIn) {
+      throw new Error('Facebook login was not completed within 15 minutes. Run npm run facebook:login and login to the correct account/page first.');
+    }
+
     for (let index = 0; index < groups.length; index += 1) {
       const group = groups[index];
       const timestamp = new Date().toISOString();
@@ -176,6 +183,17 @@ async function startFacebookPublish(payload) {
         console.log(`Preparing ${index + 1}/${groups.length}: ${group.name}`);
         await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await page.waitForTimeout(2500);
+
+        if (await isFacebookLoginScreen(page)) {
+          console.log('Facebook asked to login again before opening the group. Waiting for manual login.');
+          const reloggedIn = await waitForFacebookLogin(page, 15 * 60_000, { navigate: false });
+          if (!reloggedIn) {
+            throw new Error('Facebook login was not completed, so publishing was stopped before preparing this group.');
+          }
+          await page.goto(group.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+          await page.waitForTimeout(2500);
+        }
+
         await copyToClipboard(selectedPostText);
 
         const result = await prepareFacebookDraft(page, { ...group, imagePath: selectedImagePath }, selectedPostText);
@@ -236,6 +254,57 @@ async function startFacebookPublish(payload) {
   }
 
   return summary;
+}
+
+async function waitForFacebookLogin(page, timeoutMs, options = {}) {
+  console.log('Checking Facebook login before publishing...');
+  if (options.navigate !== false) {
+    await page.goto('https://www.facebook.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  }
+
+  const startedAt = Date.now();
+  let lastLogAt = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    if (page.isClosed()) return false;
+    if (await isFacebookLoggedIn(page)) {
+      console.log('Facebook login detected. Continuing to the selected groups.');
+      return true;
+    }
+
+    if (Date.now() - lastLogAt > 30_000) {
+      const remainingSeconds = Math.max(0, Math.round((timeoutMs - (Date.now() - startedAt)) / 1000));
+      console.log(`Waiting for manual Facebook login. About ${remainingSeconds} seconds left.`);
+      lastLogAt = Date.now();
+    }
+
+    await page.waitForTimeout(5000);
+  }
+
+  return false;
+}
+
+async function isFacebookLoggedIn(page) {
+  if (await isFacebookLoginScreen(page)) return false;
+
+  return page.locator('[role="navigation"], [aria-label="Facebook"], [aria-label="דף הבית"], [aria-label="Home"]').first()
+    .isVisible({ timeout: 1000 })
+    .catch(() => false);
+}
+
+async function isFacebookLoginScreen(page) {
+  const url = page.url().toLowerCase();
+  if (url.includes('/login') || url.includes('login.php')) return true;
+
+  const loginInputVisible = await page.locator('input[name="email"], input[name="pass"]').first()
+    .isVisible({ timeout: 500 })
+    .catch(() => false);
+  if (loginInputVisible) return true;
+
+  const loginButtonVisible = await page.getByRole('button', { name: /log in|התחברות/i }).first()
+    .isVisible({ timeout: 1000 })
+    .catch(() => false);
+  return loginButtonVisible;
 }
 
 async function loadAd(supabase, adId) {

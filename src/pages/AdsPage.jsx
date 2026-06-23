@@ -21,12 +21,10 @@ const TARGET_REGION_LABELS = Object.fromEntries(TARGET_REGION_OPTIONS.map((optio
 const REGION_CHUNK_SIZE = 25;
 
 export default function AdsPage() {
-  const { ads, publisherGroups, createAd, updateAd, publishAd, unpublishAd, deleteAd } = useData();
+  const { ads, publisherGroups, createAd, updateAd, deleteAd } = useData();
   const [filter, setFilter] = useState('all');
-  const [copiedCommand, setCopiedCommand] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [publishTarget, setPublishTarget] = useState(null);
   const [facebookPublishBusyId, setFacebookPublishBusyId] = useState(null);
   const [facebookPublishMessage, setFacebookPublishMessage] = useState('');
   const [facebookPublishResult, setFacebookPublishResult] = useState(null);
@@ -45,7 +43,6 @@ export default function AdsPage() {
     draft: ads.filter((a) => a.status === 'draft').length,
     published: ads.filter((a) => a.status === 'published').length
   }), [ads]);
-  const publisherCommands = useMemo(() => buildPublisherCommands(publisherGroups), [publisherGroups]);
 
   function openCreate() {
     setEditingId(null);
@@ -68,19 +65,9 @@ export default function AdsPage() {
     setDeleteTarget(null);
     setDeleteStep(0);
   }
-  async function copyCommand(command) {
-    await copyText(command);
-    setCopiedCommand(command);
-    window.setTimeout(() => setCopiedCommand(''), 1600);
-  }
   function onFacebookPublishClick(ad) {
-    const rounds = getFacebookPublishRounds(ad, publisherGroups);
-    if (rounds.length > 1) {
-      setFacebookRoundTarget({ ad, rounds });
-      return;
-    }
-
-    startFacebookPublish(ad, rounds[0]?.region);
+    const selection = getFacebookPublishSelection(ad, publisherGroups);
+    setFacebookRoundTarget({ ad, ...selection });
   }
 
   async function startFacebookPublish(ad, selectedRegion) {
@@ -139,12 +126,6 @@ export default function AdsPage() {
         </button>
       </header>
 
-      <PublisherCommandsPanel
-        commands={publisherCommands}
-        copiedCommand={copiedCommand}
-        onCopy={copyCommand}
-      />
-
       {(facebookPublishMessage || facebookPublishResult) && (
         <section className={`card p-4 ${facebookPublishResult ? 'border-emerald-200 bg-emerald-50' : 'border-amber-200 bg-amber-50'}`}>
           {facebookPublishMessage && (
@@ -180,10 +161,8 @@ export default function AdsPage() {
               key={ad.id}
               ad={ad}
               onEdit={() => openEdit(ad)}
-              onPublish={() => setPublishTarget(ad)}
               onFacebookPublish={() => onFacebookPublishClick(ad)}
               facebookPublishBusy={facebookPublishBusyId === ad.id}
-              onUnpublish={() => unpublishAd(ad.id)}
               onDelete={() => confirmDelete(ad)}
             />
           ))}
@@ -196,15 +175,6 @@ export default function AdsPage() {
         onClose={closeEditor}
         onCreate={(payload) => { createAd(payload); closeEditor(); }}
         onUpdate={(payload) => { updateAd(editingId, payload); closeEditor(); }}
-      />
-
-      <PublishDialog
-        ad={publishTarget}
-        onClose={() => setPublishTarget(null)}
-        onConfirm={(dateIso) => {
-          publishAd(publishTarget.id, dateIso);
-          setPublishTarget(null);
-        }}
       />
 
       <FacebookRoundDialog
@@ -258,47 +228,7 @@ function FilterChip({ active, onClick, label }) {
   );
 }
 
-function PublisherCommandsPanel({ commands, copiedCommand, onCopy }) {
-  return (
-    <section className="card p-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-        <div>
-          <h2 className="text-lg font-bold text-slate-900">פקודות פרסום</h2>
-          <p className="text-xs text-slate-500">בחר סבב, העתק פקודה והרץ אותה במחשב שמפעיל את הבוט.</p>
-        </div>
-        <span className="badge bg-slate-100 text-slate-700 border border-slate-200">
-          {commands.reduce((sum, item) => sum + (item.primary ? item.count : 0), 0)} קבוצות בסבבים הראשיים
-        </span>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {commands.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            onClick={() => onCopy(item.command)}
-            className="group rounded-lg border border-slate-200 bg-white p-3 text-right hover:border-brand-300 hover:bg-brand-50/40 transition shadow-sm"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-bold text-slate-900">{item.label}</div>
-                <div className="text-xs text-slate-500">{item.count} קבוצות</div>
-              </div>
-              <span className={`badge shrink-0 ${copiedCommand === item.command ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-brand-100 text-brand-700 border border-brand-200'}`}>
-                {copiedCommand === item.command ? 'הועתק' : 'העתק'}
-              </span>
-            </div>
-            <code dir="ltr" className="mt-3 block rounded-md bg-slate-950 px-3 py-2 text-left text-xs font-semibold text-white overflow-x-auto">
-              {item.command}
-            </code>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AdCard({ ad, onEdit, onPublish, onFacebookPublish, facebookPublishBusy, onUnpublish, onDelete }) {
+function AdCard({ ad, onEdit, onFacebookPublish, facebookPublishBusy, onDelete }) {
   const fmt = (iso) => new Date(iso).toLocaleDateString('he-IL');
   return (
     <div className="card overflow-hidden flex flex-col">
@@ -335,11 +265,6 @@ function AdCard({ ad, onEdit, onPublish, onFacebookPublish, facebookPublishBusy,
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-secondary !py-1.5 !px-3 text-xs" onClick={onEdit}>עריכה</button>
-          {ad.status === 'draft' ? (
-            <button className="btn-primary !py-1.5 !px-3 text-xs" onClick={onPublish}>פרסם</button>
-          ) : (
-            <button className="btn-secondary !py-1.5 !px-3 text-xs" onClick={onUnpublish}>החזר לטיוטה</button>
-          )}
           <button
             className="btn-primary !py-1.5 !px-3 text-xs"
             onClick={onFacebookPublish}
@@ -503,37 +428,6 @@ function AdEditor({ open, ad, onClose, onCreate, onUpdate }) {
   );
 }
 
-function PublishDialog({ ad, onClose, onConfirm }) {
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
-  if (!ad) return null;
-  return (
-    <Modal
-      open={!!ad}
-      title="פרסום מודעה"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn-secondary" onClick={onClose}>ביטול</button>
-          <button className="btn-primary" onClick={() => onConfirm(date)}>פרסם</button>
-        </>
-      }
-    >
-      <p className="text-sm mb-3">
-        סימון הפרסומת <strong>{ad.title || 'ללא כותרת'}</strong> כפורסמה.
-      </p>
-      <label className="block">
-        <span className="label">תאריך פרסום</span>
-        <input
-          className="input"
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-      </label>
-    </Modal>
-  );
-}
-
 function FacebookRoundDialog({ target, busy, onClose, onSelect }) {
   if (!target) return null;
   const adTitle = target.ad?.title || 'פרסומת';
@@ -542,18 +436,19 @@ function FacebookRoundDialog({ target, busy, onClose, onSelect }) {
   return (
     <Modal
       open={!!target}
-      title="בחירת סבב לפרסום בפייסבוק"
+      title="קבוצות לפרסום בפייסבוק"
       onClose={onClose}
-      size="md"
+      size="lg"
       footer={<button className="btn-secondary" onClick={onClose}>ביטול</button>}
     >
       <div className="space-y-4">
         <div className="rounded-md bg-slate-50 border border-slate-200 px-3 py-2 text-sm text-slate-700">
           <div>פרסומת: <span className="font-bold text-slate-900">{adTitle}</span></div>
           <div>אזור יעד: <span className="font-bold text-slate-900">{regionLabel}</span></div>
+          <div>קבוצות שנמצאו באזור: <span className="font-bold text-slate-900">{target.groups.length}</span></div>
         </div>
         <p className="text-sm text-slate-600">
-          באזור הזה יש יותר מ-{REGION_CHUNK_SIZE} קבוצות. בחר איזה סבב לפרסם עכשיו.
+          בחר את הסבב שתרצה להריץ עכשיו. כל סבב מכיל עד {REGION_CHUNK_SIZE} קבוצות.
         </p>
         <div className="grid gap-2">
           {target.rounds.map((round) => (
@@ -573,6 +468,27 @@ function FacebookRoundDialog({ target, busy, onClose, onSelect }) {
               </code>
             </button>
           ))}
+        </div>
+        <div className="rounded-md border border-slate-200 overflow-hidden">
+          <div className="bg-slate-50 px-3 py-2 text-sm font-bold text-slate-900">
+            רשימת קבוצות באזור היעד
+          </div>
+          <ul className="max-h-[300px] overflow-auto divide-y divide-slate-100">
+            {target.groups.map((group) => (
+              <li key={group.url} className="px-3 py-2 text-sm">
+                <div className="font-semibold text-slate-900 truncate">{group.name}</div>
+                <a
+                  className="mt-1 block text-xs text-brand-700 hover:underline truncate"
+                  href={group.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  dir="ltr"
+                >
+                  {group.url}
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </Modal>
@@ -594,51 +510,32 @@ function getTargetRegionLabel(region) {
   return region;
 }
 
-function buildPublisherCommands(groups) {
-  const buckets = getRegionBuckets(groups);
-  const lapCounts = getLapCounts(groups, 4);
-  const command = (round) => `node publisher.js ${round} --dev`;
-  const allCountryCommands = getChunks(buckets.allcountry, REGION_CHUNK_SIZE).map((chunk, index, chunks) => ({
-    key: `all${index + 1}`,
-    label: chunks.length === 1 ? 'כל הארץ' : `כל הארץ ${index + 1}`,
-    count: chunk.length,
-    command: command(`all${index + 1}`),
-    primary: true
-  }));
-  const regionCommands = ['north', 'center', 'jerusalem', 'sharon', 'south'].flatMap((region) =>
-    buildRegionRounds(region, buckets[region], REGION_CHUNK_SIZE).map((round) => ({
-      key: round.region,
-      label: round.label,
-      count: round.count,
-      command: command(round.region),
-      primary: true
-    }))
-  );
-
-  return [
-    ...allCountryCommands,
-    ...regionCommands,
-    { key: 'lap1', label: 'Lap 1', count: lapCounts[0], command: command('lap1') },
-    { key: 'lap2', label: 'Lap 2', count: lapCounts[1], command: command('lap2') },
-    { key: 'lap3', label: 'Lap 3', count: lapCounts[2], command: command('lap3') },
-    { key: 'lap4', label: 'Lap 4', count: lapCounts[3], command: command('lap4') }
-  ];
-}
-
-function getFacebookPublishRounds(ad, groups) {
+function getFacebookPublishSelection(ad, groups) {
   const region = ad?.targetRegion || 'allcountry';
-  if (region === 'all') return [{ region: undefined, label: 'כל הקבוצות', count: groups.length }];
+  if (region === 'all') {
+    return {
+      groups: [...groups].sort((a, b) => a.name.localeCompare(b.name, 'he')),
+      rounds: [{ region: undefined, label: 'כל הקבוצות', count: groups.length }]
+    };
+  }
 
   const buckets = getRegionBuckets(groups);
   if (region === 'allcountry') {
-    return getChunks(buckets.allcountry, REGION_CHUNK_SIZE).map((chunk, index, chunks) => ({
-      region: `all${index + 1}`,
-      label: chunks.length === 1 ? 'כל הארץ' : `כל הארץ ${index + 1}`,
-      count: chunk.length
-    })).filter((round) => round.count > 0);
+    return {
+      groups: buckets.allcountry,
+      rounds: getChunks(buckets.allcountry, REGION_CHUNK_SIZE).map((chunk, index, chunks) => ({
+        region: `all${index + 1}`,
+        label: chunks.length === 1 ? 'כל הארץ' : `כל הארץ ${index + 1}`,
+        count: chunk.length
+      })).filter((round) => round.count > 0)
+    };
   }
 
-  return buildRegionRounds(region, buckets[region] || [], REGION_CHUNK_SIZE);
+  const regionGroups = buckets[region] || [];
+  return {
+    groups: regionGroups,
+    rounds: buildRegionRounds(region, regionGroups, REGION_CHUNK_SIZE)
+  };
 }
 
 function buildRegionRounds(region, groups, chunkSize) {
@@ -649,12 +546,6 @@ function buildRegionRounds(region, groups, chunkSize) {
       : `${TARGET_REGION_LABELS[region] || region} ${index + 1}`,
     count: chunk.length
   })).filter((round) => round.count > 0);
-}
-
-function getLapCounts(groups, lapCount) {
-  const baseSize = Math.floor(groups.length / lapCount);
-  const remainder = groups.length % lapCount;
-  return Array.from({ length: lapCount }, (_, index) => baseSize + (index < remainder ? 1 : 0));
 }
 
 function getChunks(items, chunkSize) {

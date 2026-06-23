@@ -57,7 +57,9 @@ const GROUPS_FILE = path.join(ROOT_DIR, 'groups.json');
 const POSTS_FILE = path.join(ROOT_DIR, 'posts.json');
 const ENV_FILE = path.join(ROOT_DIR, '.env');
 const LOG_FILE = path.join(ROOT_DIR, 'publish-log.json');
-const PROFILE_DIR = path.join(ROOT_DIR, 'facebook-profile');
+const PROFILE_DIR = process.env.FACEBOOK_PUBLISH_PROFILE_DIR
+  ? path.resolve(process.env.FACEBOOK_PUBLISH_PROFILE_DIR)
+  : path.join(ROOT_DIR, 'facebook-publish-profile-active');
 const CACHE_DIR = path.join(ROOT_DIR, '.publisher-cache');
 
 const args = process.argv.slice(2);
